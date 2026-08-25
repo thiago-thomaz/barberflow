@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+.agents
+dev.db
+dev.db-journal
+*.log
+npm-debug.log*
+.DS_Store

@@ -1,0 +1,386 @@
+// BarberFlow - Prisma Schema (Production Hardened SaaS Architecture)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------
+// Core Multi-tenancy & User Management
+// ----------------------------------------------------
+
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  passwordHash String
+  name         String
+  role         String      @default("OWNER") // SUPER_ADMIN, OWNER, BARBER, RECEPTIONIST
+  barbershopId String?
+  barbershop   Barbershop? @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  auditLogs          AuditLog[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([barbershopId])
+  @@index([email])
+  @@index([role])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model Barbershop {
+  id             String               @id @default(cuid())
+  name           String
+  slug           String               @unique
+  phone          String?
+  address        String?
+  city           String?
+  state          String?
+  logoUrl        String?
+  settings       String?              // JSON encoded custom settings & WhatsApp templates
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  users          User[]
+  barbers        Barber[]
+  customers      Customer[]
+  services       Service[]
+  appointments   Appointment[]
+  payments       Payment[]
+  businessHours  BusinessHours[]
+  webhooks       Webhook[]
+  auditLogs      AuditLog[]
+  subscriptions  Subscription[]
+  events         AutomationEvent[]
+  notifications  Notification[]
+  subscriptionEvents SubscriptionEvent[]
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+// ----------------------------------------------------
+// Operational Entities (Barbers, Services, Hours)
+// ----------------------------------------------------
+
+model Barber {
+  id           String        @id @default(cuid())
+  barbershopId String
+  barbershop   Barbershop    @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  name         String
+  phone        String?
+  specialty    String?
+  commission   Float?        @default(0.0) // Percentage (e.g. 50 = 50%)
+  avatarUrl    String?
+  isActive     Boolean       @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  appointments Appointment[]
+  payments     Payment[]
+
+  @@index([barbershopId])
+  @@index([barbershopId, isActive])
+}
+
+model Service {
+  id           String        @id @default(cuid())
+  barbershopId String
+  barbershop   Barbershop    @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  durationMin  Int           @default(30)
+  price        Float
+  isActive     Boolean       @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  appointments Appointment[]
+
+  @@index([barbershopId])
+  @@index([barbershopId, isActive])
+}
+
+model BusinessHours {
+  id           String     @id @default(cuid())
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  dayOfWeek    Int        // 0 = Sunday, 1 = Monday, ... 6 = Saturday
+  openTime     String     // "09:00"
+  closeTime    String     // "19:00"
+  isOpen       Boolean    @default(true)
+
+  @@unique([barbershopId, dayOfWeek])
+  @@index([barbershopId])
+}
+
+// ----------------------------------------------------
+// Customers, LGPD & Recurrence Engine
+// ----------------------------------------------------
+
+model Customer {
+  id               String              @id @default(cuid())
+  barbershopId     String
+  barbershop       Barbershop          @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  name             String
+  phone            String
+  email            String?
+  birthDate        DateTime?
+  notes            String?             // Preferences, style notes
+  status           String              @default("NOVO") // NOVO, ATIVO, EM_RISCO, INATIVO, VIP
+  recurrenceRate   String              @default("MEDIA") // ALTA, MEDIA, BAIXA
+  noShowCount      Int                 @default(0)
+  marketingOptIn   Boolean             @default(true)  // LGPD consent
+  privacyConsentAt DateTime?                           // LGPD consent timestamp
+  deletedAt        DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  stats          CustomerVisitStats?
+  appointments   Appointment[]
+  payments       Payment[]
+  notifications  Notification[]
+
+  @@index([barbershopId])
+  @@index([phone])
+  @@index([status])
+  @@index([barbershopId, phone])
+}
+
+model CustomerVisitStats {
+  id                   String    @id @default(cuid())
+  customerId           String    @unique
+  customer             Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  totalVisits          Int       @default(0)
+  totalSpent           Float     @default(0.0)
+  avgTicket            Float     @default(0.0)
+  avgDaysBetweenVisits Float     @default(0.0)
+  medianDaysBetween    Float     @default(0.0)
+  lastVisitDate        DateTime?
+  estimatedNextVisit   DateTime?
+  daysSinceLastVisit   Int       @default(0)
+  updatedAt            DateTime  @updatedAt
+
+  @@index([customerId])
+  @@index([estimatedNextVisit])
+}
+
+// ----------------------------------------------------
+// Appointments & Payments
+// ----------------------------------------------------
+
+model Appointment {
+  id           String      @id @default(cuid())
+  barbershopId String
+  barbershop   Barbershop  @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  customerId   String
+  customer     Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  barberId     String
+  barber       Barber      @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  serviceId    String
+  service      Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  
+  scheduledAt          DateTime
+  endAt                DateTime
+  durationMinutes      Int         @default(30)
+  status               String      @default("AGENDADO") // AGENDADO, CONFIRMADO, EM_ATENDIMENTO, CONCLUIDO, CANCELADO, NO_SHOW
+  cancelReason         String?
+  cancelledAt          DateTime?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  publicToken          String      @unique @default(cuid())
+  idempotencyKey       String?     @unique
+  notes                String?
+  price                Float
+  serviceNameSnapshot  String?
+  servicePriceSnapshot Float?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  payment      Payment?
+
+  @@index([barbershopId])
+  @@index([barberId])
+  @@index([customerId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@index([publicToken])
+  @@index([barbershopId, barberId, scheduledAt])
+  @@index([barbershopId, scheduledAt])
+}
+
+model Payment {
+  id            String       @id @default(cuid())
+  barbershopId  String
+  barbershop    Barbershop   @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  appointmentId String?      @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  customerId    String?
+  customer      Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  barberId      String?
+  barber        Barber?      @relation(fields: [barberId], references: [id], onDelete: SetNull)
+  
+  amount        Float
+  method        String       @default("PIX") // PIX, DINHEIRO, CARTAO_CREDITO, CARTAO_DEBITO, OUTRO
+  status        String       @default("PAGO") // PENDENTE, PAGO, CANCELADO
+  paidAt        DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([barbershopId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([barbershopId, createdAt])
+}
+
+// ----------------------------------------------------
+// Subscriptions, Plans & Monetization
+// ----------------------------------------------------
+
+model Plan {
+  id                     String         @id @default(cuid())
+  name                   String         // STARTER, PRO, BUSINESS
+  tier                   String         @unique @default("PRO") // STARTER, PRO, BUSINESS
+  price                  Float
+  interval               String         @default("MONTHLY") // MONTHLY, YEARLY
+  maxBarbers             Int            @default(2)
+  maxMonthlyAppointments Int            @default(200)
+  hasWhatsappAutomation  Boolean        @default(false)
+  hasAdvancedAnalytics   Boolean        @default(false)
+  hasMultiUnit           Boolean        @default(false)
+  featuresJson           String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                   String     @id @default(cuid())
+  barbershopId         String     @unique
+  barbershop           Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  planId               String
+  plan                 Plan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  status               String     @default("TRIALING") // TRIALING, ACTIVE, PAST_DUE, CANCELLED, EXPIRED
+  trialEndsAt          DateTime?
+  currentPeriodStart   DateTime   @default(now())
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean    @default(false)
+  externalCustomerId   String?
+  externalSubscriptionId String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  @@index([barbershopId])
+  @@index([status])
+}
+
+model SubscriptionEvent {
+  id           String     @id @default(cuid())
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  eventType    String     // invoice.paid, subscription.created, trial.expired
+  payload      String     // JSON payload
+  createdAt    DateTime   @default(now())
+
+  @@index([barbershopId])
+}
+
+// ----------------------------------------------------
+// Notifications & Webhook Event Bus
+// ----------------------------------------------------
+
+model Notification {
+  id           String     @id @default(cuid())
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  customerId   String?
+  customer     Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  channel      String     // WHATSAPP, EMAIL, SMS
+  type         String     // APPOINTMENT_REMINDER, RETURN_RECURRENCE, INACTIVE_RECOVERY
+  status       String     // PENDING, SENT, DELIVERED, FAILED
+  provider     String?    // N8N_WEBHOOK, Z_API, EVOLUTION, RESEND
+  externalId   String?
+  error        String?
+  metadata     String?    // JSON
+  sentAt       DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([barbershopId])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Webhook {
+  id           String     @id @default(cuid())
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  url          String
+  secret       String     // HMAC secret for payload signature
+  isActive     Boolean    @default(true)
+  events       String     // JSON array of event names or "*"
+  lastTriggerAt DateTime?
+  lastStatus   Int?       // e.g. 200, 500
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([barbershopId])
+}
+
+model AutomationEvent {
+  id           String     @id @default(cuid())
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  event        String     // APPOINTMENT_CREATED, CUSTOMER_AT_RISK, etc.
+  payload      String     // JSON payload
+  delivered    Boolean    @default(false)
+  attempts     Int        @default(0)
+  createdAt    DateTime   @default(now())
+
+  @@index([barbershopId])
+  @@index([event])
+}
+
+// ----------------------------------------------------
+// Security, Rate Limiting & Audit Logging
+// ----------------------------------------------------
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  tenantId     String
+  tenant       Barbershop  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action       String      // CREATE, UPDATE, DELETE, LOGIN, CANCEL, COMPLETE
+  entity       String      // Customer, Appointment, Barber, etc.
+  entityId     String?
+  requestId    String?
+  metadata     String?     // JSON metadata
+  createdAt    DateTime    @default(now())
+
+  @@index([tenantId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([requestId])
+}
