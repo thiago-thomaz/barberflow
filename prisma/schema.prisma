@@ -57,6 +57,16 @@ model Barbershop {
   logoUrl        String?
   settings       String?              // JSON encoded custom settings & WhatsApp templates
   isActive       Boolean              @default(true)
+  
+  // WhatsApp & Reminders Engine Settings
+  whatsappActive Boolean              @default(true)
+  reminder24h    Boolean              @default(true)
+  reminder6h     Boolean              @default(true)
+  reminder2h     Boolean              @default(true)
+  reminder1h     Boolean              @default(true)
+  whatsappApiKey String?
+  whatsappPhoneId String?
+
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
@@ -73,6 +83,9 @@ model Barbershop {
   events         AutomationEvent[]
   notifications  Notification[]
   subscriptionEvents SubscriptionEvent[]
+  whatsappSessions   WhatsappSession[]
+  whatsappMessages   WhatsappMessage[]
+  appointmentReminders AppointmentReminder[]
 
   @@index([slug])
   @@index([isActive])
@@ -145,6 +158,7 @@ model Customer {
   barbershop       Barbershop          @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
   name             String
   phone            String
+  whatsappPhone    String?
   email            String?
   birthDate        DateTime?
   notes            String?             // Preferences, style notes
@@ -157,13 +171,15 @@ model Customer {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
-  stats          CustomerVisitStats?
-  appointments   Appointment[]
-  payments       Payment[]
-  notifications  Notification[]
+  stats            CustomerVisitStats?
+  appointments     Appointment[]
+  payments         Payment[]
+  notifications    Notification[]
+  whatsappMessages WhatsappMessage[]
 
   @@index([barbershopId])
   @@index([phone])
+  @@index([whatsappPhone])
   @@index([status])
   @@index([barbershopId, phone])
 }
@@ -205,6 +221,7 @@ model Appointment {
   endAt                DateTime
   durationMinutes      Int         @default(30)
   status               String      @default("AGENDADO") // AGENDADO, CONFIRMADO, EM_ATENDIMENTO, CONCLUIDO, CANCELADO, NO_SHOW
+  origin               String      @default("WEB") // WEB, WHATSAPP, ADMIN, MANUAL
   cancelReason         String?
   cancelledAt          DateTime?
   startedAt            DateTime?
@@ -215,16 +232,20 @@ model Appointment {
   price                Float
   serviceNameSnapshot  String?
   servicePriceSnapshot Float?
+  rescheduledFromId    String?
+  rescheduledToId      String?
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
 
-  payment      Payment?
+  payment              Payment?
+  reminders            AppointmentReminder[]
 
   @@index([barbershopId])
   @@index([barberId])
   @@index([customerId])
   @@index([scheduledAt])
   @@index([status])
+  @@index([origin])
   @@index([publicToken])
   @@index([barbershopId, barberId, scheduledAt])
   @@index([barbershopId, scheduledAt])
@@ -385,3 +406,67 @@ model AuditLog {
   @@index([createdAt])
   @@index([requestId])
 }
+
+// ----------------------------------------------------
+// WhatsApp Conversational Engine, Sessions & Reminders
+// ----------------------------------------------------
+
+model WhatsappSession {
+  id           String     @id @default(cuid())
+  barbershopId String
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  phone        String     // E.164 canonical normalized phone number (e.g. 5514998016163)
+  state        String     @default("IDLE") // IDLE, SELECTING_SERVICE, SELECTING_BARBER, SELECTING_DATE, SELECTING_TIME, WAITING_CONFIRMATION, BOOKED, CANCELLING, RESCHEDULING, OPTED_OUT
+  context      String?    // JSON context holding serviceId, barberId, date, time, customerName, etc.
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([barbershopId, phone])
+  @@index([phone])
+  @@index([expiresAt])
+}
+
+model WhatsappMessage {
+  id                String     @id @default(cuid())
+  barbershopId      String
+  barbershop        Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  customerId        String?
+  customer          Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  phone             String
+  direction         String     // INBOUND, OUTBOUND
+  type              String     @default("TEXT") // TEXT, INTERACTIVE, TEMPLATE, DOCUMENT
+  template          String?
+  content           String?
+  status            String     @default("SENT") // QUEUED, SENT, DELIVERED, READ, FAILED
+  providerMessageId String?
+  appointmentId     String?
+  createdAt         DateTime   @default(now())
+
+  @@index([barbershopId, phone])
+  @@index([providerMessageId])
+  @@index([appointmentId])
+}
+
+model AppointmentReminder {
+  id                String      @id @default(cuid())
+  barbershopId      String
+  barbershop        Barbershop  @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  appointmentId     String
+  appointment       Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  reminderType      String      // T_24H, T_6H, T_2H, T_1H
+  scheduledFor      DateTime
+  status            String      @default("PENDING") // PENDING, SENT, FAILED, CANCELLED
+  sentAt            DateTime?
+  providerMessageId String?
+  attempts          Int         @default(0)
+  error             String?
+  idempotencyKey    String      @unique @default(cuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@unique([appointmentId, reminderType])
+  @@index([barbershopId, status, scheduledFor])
+  @@index([scheduledFor])
+}
+

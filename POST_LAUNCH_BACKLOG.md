@@ -1,19 +1,14 @@
-# Backlog Pós-Lançamento (Post-Launch Roadmap) — BarberFlow
+# BarberFlow — Post Launch Backlog
 
-As seguintes funcionalidades foram planejadas para versões subsequentes após a validação comercial do MVP com os primeiros clientes pagantes:
+## 📋 Itens Futuros (Fora do Escopo da Fase 11)
 
----
-
-## 1. Módulos Operacionais Avançados (v1.1)
-- [ ] **Múltiplas Unidades (Multi-unit)**: Troca dinâmica de filial dentro do mesmo painel de dono.
-- [ ] **Controle de Estoque de Produtos**: Entrada e saída de pomadas, óleos e produtos de balcão com baixa automática em combos.
-- [ ] **Divisão de Comissões por Serviço**: Taxas percentuais ou fixas customizadas por barbeiro e categoria de serviço.
-
-## 2. Experiência & Fidelidade do Cliente (v1.2)
-- [ ] **Clube de Assinatura do Cliente Final**: Planos mensais de corte ilimitado (ex: R$ 99/mês para o cliente cortar toda semana).
-- [ ] **Programa de Pontos & Indicação**: Cashback ou selos de fidelidade automáticos a cada visita completada.
-- [ ] **App PWA Instalável para Clientes**: Notificações push diretas no smartphone do cliente sem passar por SMS.
-
-## 3. Integrações & Enterprise (v1.3)
-- [ ] **Emissão Automática de NF-e / NFS-e** via plug-in Focus NFe ou e-Notas.
-- [ ] **Integração com Maquininhas de Cartão Inteligentes (Smart POS)** via Stone / Cielo API.
+1. **Agente IA Conversacional Avançado:**
+   - Suporte a LLM (OpenAI/Anthropic/Gemini) com fallback determinístico para conversas contextuais abertas e áudios de WhatsApp.
+2. **Pagamentos nativos via WhatsApp Pay:**
+   - Envio de links de PIX dinâmicos e QR Codes gerados diretamente no chat.
+3. **Venda de Produtos e Adicionais:**
+   - Sugestão e venda de pomadas, óleos de barba e bebidas no fluxo do WhatsApp.
+4. **Campanhas Massivas e Segmentação:**
+   - Disparos em massa respeitando limites de taxa da Meta e opt-in rigoroso.
+5. **Programa de Pontos & Fidelidade no WhatsApp:**
+   - Consulta de saldo de pontos e resgate de cortes gratuitos.
