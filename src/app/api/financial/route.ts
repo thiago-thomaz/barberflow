@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getTodayDateStringSP } from '@/lib/timezone';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,19 +14,20 @@ export async function GET(req: NextRequest) {
     }
 
     const barbershopId = session.barbershopId;
+    const todayStr = getTodayDateStringSP();
+
+    // 1. Time Ranges (America/Sao_Paulo)
+    const startOfToday = new Date(`${todayStr}T00:00:00-03:00`);
+    const endOfToday = new Date(`${todayStr}T23:59:59.999-03:00`);
+
     const now = new Date();
-
-    // 1. Time Ranges
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
     const startOfWeek = new Date(now);
     const day = startOfWeek.getDay();
     const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
     startOfWeek.setDate(diff);
     startOfWeek.setHours(0, 0, 0, 0);
 
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
     // 2. Fetch Payments

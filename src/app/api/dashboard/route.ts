@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getRecurrenceDashboardMetrics } from '@/lib/recurrence';
+import { getTodayDateStringSP } from '@/lib/timezone';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,14 +15,11 @@ export async function GET(req: NextRequest) {
     }
 
     const barbershopId = session.barbershopId;
-    const now = new Date();
+    const todayStr = getTodayDateStringSP();
 
-    // Start and end of today
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
+    // Start and end of today in Brazil (America/Sao_Paulo)
+    const startOfToday = new Date(`${todayStr}T00:00:00-03:00`);
+    const endOfToday = new Date(`${todayStr}T23:59:59.999-03:00`);
 
     // 1. Fetch Today Appointments
     const todayAppointments = await prisma.appointment.findMany({
