@@ -3,6 +3,7 @@ import { getSessionFromRequest } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { logAuditEvent } from '@/lib/tenant';
 import { publishEvent } from '@/lib/events';
+import { calculateCustomerRecurrence } from '@/lib/recurrence';
 
 // POST /api/appointments/[id]/complete - Complete appointment & register payment
 export async function POST(
@@ -86,6 +87,11 @@ export async function POST(
         barberId: completed.barberId,
         serviceId: completed.serviceId,
       }
+    );
+
+    // Recalculate recurrence stats for the customer automatically
+    await calculateCustomerRecurrence(completed.customerId, session.barbershopId).catch((err) =>
+      console.warn('Failed to calculateCustomerRecurrence:', err)
     );
 
     return NextResponse.json({ success: true, appointment: completed });

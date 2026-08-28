@@ -21,14 +21,28 @@ export async function GET(req: NextRequest) {
     const startOfToday = new Date(`${todayStr}T00:00:00-03:00`);
     const endOfToday = new Date(`${todayStr}T23:59:59.999-03:00`);
 
-    // 1. Fetch Today Appointments
-    const todayAppointments = await prisma.appointment.findMany({
+    // 1. Fetch Today Payments (Actual revenue realized today)
+    const todayPayments = await prisma.payment.findMany({
       where: {
         barbershopId,
-        scheduledAt: {
+        status: 'PAGO',
+        createdAt: {
           gte: startOfToday,
           lte: endOfToday,
         },
+      },
+    });
+
+    const revenueRealizedToday = todayPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+
+    // 2. Fetch Today Appointments (Scheduled for today OR completed today)
+    const todayAppointments = await prisma.appointment.findMany({
+      where: {
+        barbershopId,
+        OR: [
+          { scheduledAt: { gte: startOfToday, lte: endOfToday } },
+          { completedAt: { gte: startOfToday, lte: endOfToday } },
+        ],
       },
       include: {
         customer: { select: { id: true, name: true, phone: true } },
@@ -44,11 +58,12 @@ export async function GET(req: NextRequest) {
     const cancelledToday = todayAppointments.filter((a) => a.status === 'CANCELADO');
     const noShowToday = todayAppointments.filter((a) => a.status === 'NO_SHOW');
 
-    const revenueForecastToday = todayAppointments
-      .filter((a) => a.status !== 'CANCELADO')
-      .reduce((acc, a) => acc + (a.price || 0), 0);
-
-    const revenueRealizedToday = completedToday.reduce((acc, a) => acc + (a.price || 0), 0);
+    const revenueForecastToday = Math.max(
+      revenueRealizedToday,
+      todayAppointments
+        .filter((a) => a.status !== 'CANCELADO')
+        .reduce((acc, a) => acc + (a.price || 0), 0)
+    );
 
     // 2. Recurrence & Customer Health Metrics
     const recurrenceMetrics = await getRecurrenceDashboardMetrics(barbershopId);
