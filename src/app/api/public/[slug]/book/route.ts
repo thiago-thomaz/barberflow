@@ -89,61 +89,69 @@ export async function POST(
       return NextResponse.json({ error: 'Telefone inválido' }, { status: 400 });
     }
 
+    let isNewCustomer = false;
+
     // Atomic Booking in Transaction
-    const result = await prisma.$transaction(
-      async (tx) => {
-        // 1. Find or create Customer in this tenant
-        let customer = await tx.customer.findFirst({
-          where: {
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Find or create Customer in this tenant
+      let customer = await tx.customer.findFirst({
+        where: {
+          barbershopId: shop.id,
+          phone: { contains: cleanPhone.slice(-8) },
+          deletedAt: null,
+        },
+      });
+
+      if (!customer) {
+        isNewCustomer = true;
+        customer = await tx.customer.create({
+          data: {
             barbershopId: shop.id,
-            phone: { contains: cleanPhone.slice(-8) },
-            deletedAt: null,
+            name: customerName.trim(),
+            phone: customerPhone.trim(),
+            status: 'NOVO',
           },
         });
 
-        if (!customer) {
-          customer = await tx.customer.create({
-            data: {
-              barbershopId: shop.id,
-              name: customerName.trim(),
-              phone: customerPhone.trim(),
-              status: 'NOVO',
-            },
-          });
+        await tx.customerVisitStats.create({
+          data: {
+            customerId: customer.id,
+            totalVisits: 0,
+            totalSpent: 0,
+            avgTicket: 0,
+            avgDaysBetweenVisits: 30,
+            medianDaysBetween: 30,
+          },
+        });
+      }
 
-          await tx.customerVisitStats.create({
-            data: {
-              customerId: customer.id,
-              totalVisits: 0,
-              totalSpent: 0,
-              avgTicket: 0,
-              avgDaysBetweenVisits: 30,
-              medianDaysBetween: 30,
-            },
-          });
+      // 2. Determine target Barber
+      let chosenBarber = null;
 
-          await publishEvent(
-            'CUSTOMER_CREATED',
-            shop.id,
-            {
-              customerName: customer.name,
-              customerPhone: customer.phone,
-            },
-            { customerId: customer.id }
-          );
-        }
+      if (barberId && barberId !== 'ANY') {
+        chosenBarber = shop.barbers.find((b) => b.id === barberId);
+        if (!chosenBarber) throw new Error('BARBER_NOT_FOUND');
 
-        // 2. Determine target Barber
-        let chosenBarber = null;
+        // Check conflict
+        const conflict = await tx.appointment.findFirst({
+          where: {
+            barberId: chosenBarber.id,
+            barbershopId: shop.id,
+            status: { notIn: ['CANCELADO', 'NO_SHOW'] },
+            AND: [
+              { scheduledAt: { lt: endDateTime } },
+              { endAt: { gt: startDateTime } },
+            ],
+          },
+        });
 
-        if (barberId && barberId !== 'ANY') {
-          chosenBarber = shop.barbers.find((b) => b.id === barberId);
-          if (!chosenBarber) throw new Error('BARBER_NOT_FOUND');
-
-          // Check conflict
+        if (conflict) throw new Error('SCHEDULE_CONFLICT');
+      } else {
+        // Find any available barber
+        for (const candidate of shop.barbers) {
           const conflict = await tx.appointment.findFirst({
             where: {
-              barberId: chosenBarber.id,
+              barberId: candidate.id,
               barbershopId: shop.id,
               status: { notIn: ['CANCELADO', 'NO_SHOW'] },
               AND: [
@@ -153,58 +161,52 @@ export async function POST(
             },
           });
 
-          if (conflict) throw new Error('SCHEDULE_CONFLICT');
-        } else {
-          // Find any available barber
-          for (const candidate of shop.barbers) {
-            const conflict = await tx.appointment.findFirst({
-              where: {
-                barberId: candidate.id,
-                barbershopId: shop.id,
-                status: { notIn: ['CANCELADO', 'NO_SHOW'] },
-                AND: [
-                  { scheduledAt: { lt: endDateTime } },
-                  { endAt: { gt: startDateTime } },
-                ],
-              },
-            });
-
-            if (!conflict) {
-              chosenBarber = candidate;
-              break;
-            }
+          if (!conflict) {
+            chosenBarber = candidate;
+            break;
           }
-
-          if (!chosenBarber) throw new Error('NO_BARBER_AVAILABLE');
         }
 
-        // 3. Create Appointment with Snapshot and unique Public Token
-        const appointment = await tx.appointment.create({
-          data: {
-            barbershopId: shop.id,
-            customerId: customer.id,
-            barberId: chosenBarber.id,
-            serviceId: service.id,
-            scheduledAt: startDateTime,
-            endAt: endDateTime,
-            durationMinutes: duration,
-            price: service.price,
-            serviceNameSnapshot: service.name,
-            servicePriceSnapshot: service.price,
-            notes: notes?.trim() || null,
-            status: 'AGENDADO',
-          },
-          include: {
-            customer: true,
-            barber: true,
-            service: true,
-          },
-        });
+        if (!chosenBarber) throw new Error('NO_BARBER_AVAILABLE');
+      }
 
-        return { appointment, customer, barber: chosenBarber, service };
-      },
-      { isolationLevel: 'Serializable' }
-    );
+      // 3. Create Appointment with Snapshot and unique Public Token
+      const appointment = await tx.appointment.create({
+        data: {
+          barbershopId: shop.id,
+          customerId: customer.id,
+          barberId: chosenBarber.id,
+          serviceId: service.id,
+          scheduledAt: startDateTime,
+          endAt: endDateTime,
+          durationMinutes: duration,
+          price: service.price,
+          serviceNameSnapshot: service.name,
+          servicePriceSnapshot: service.price,
+          notes: notes?.trim() || null,
+          status: 'AGENDADO',
+        },
+        include: {
+          customer: true,
+          barber: true,
+          service: true,
+        },
+      });
+
+      return { appointment, customer, barber: chosenBarber, service };
+    });
+
+    if (isNewCustomer) {
+      await publishEvent(
+        'CUSTOMER_CREATED',
+        shop.id,
+        {
+          customerName: result.customer.name,
+          customerPhone: result.customer.phone,
+        },
+        { customerId: result.customer.id }
+      ).catch((err) => console.warn('Failed to publish CUSTOMER_CREATED:', err));
+    }
 
     // Publish APPOINTMENT_CREATED event
     await publishEvent(
@@ -226,7 +228,7 @@ export async function POST(
         barberId: result.barber.id,
         serviceId: result.service.id,
       }
-    );
+    ).catch((err) => console.warn('Failed to publish APPOINTMENT_CREATED:', err));
 
     return NextResponse.json(
       {
@@ -249,13 +251,16 @@ export async function POST(
       { status: 201 }
     );
   } catch (error: any) {
-    console.warn('Public Booking error:', error.message);
+    console.error('Public Booking error:', error);
     if (error.message === 'SCHEDULE_CONFLICT' || error.message === 'NO_BARBER_AVAILABLE') {
       return NextResponse.json(
         { error: 'Este horário acabou de ser preenchido. Por favor, escolha outro horário disponível.' },
         { status: 409 }
       );
     }
-    return NextResponse.json({ error: 'Erro ao processar agendamento' }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || 'Erro ao processar agendamento' },
+      { status: 500 }
+    );
   }
 }
