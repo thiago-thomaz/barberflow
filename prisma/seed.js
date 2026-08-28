@@ -28,7 +28,7 @@ async function main() {
       name: 'PRO',
       price: 89.9,
       interval: 'MONTHLY',
-      features: JSON.stringify(['Agendamentos ilimitados', 'Motor de Recorrência', 'Webhooks n8n', 'Página Pública']),
+      featuresJson: JSON.stringify(['Agendamentos ilimitados', 'Motor de Recorrência', 'Webhooks n8n', 'Página Pública']),
     },
   });
 
