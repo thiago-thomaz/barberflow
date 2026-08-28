@@ -74,7 +74,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto text-center space-y-6 relative z-10">
           <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-xs font-bold text-amber-400 shadow-sm">
             <Sparkles className="h-3.5 w-3.5" />
-            <span>O SaaS mais inteligente e lucrativo para Barbearias</span>
+            <span>O SaaS mais inteligente para Barbearias • Deploy Automático Ativo 🚀</span>
           </div>
 
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-tight">
