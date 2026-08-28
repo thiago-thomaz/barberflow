@@ -7,7 +7,8 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat openssl
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
-RUN npm ci
+ENV NODE_ENV=development
+RUN npm ci --include=dev
 
 # 2. Build stage
 FROM node:20-alpine AS builder
@@ -15,11 +16,11 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat openssl
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
 RUN npx prisma generate
 RUN npx prisma db push
 RUN node prisma/seed.js
-ENV NEXT_TELEMETRY_DISABLED 1
-ENV NODE_ENV production
 RUN npm run build
 
 # 3. Production runner stage
