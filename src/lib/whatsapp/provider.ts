@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { wahaClient, WahaClient } from './waha';
 
 export interface SendTextParams {
   to: string;
@@ -6,6 +7,7 @@ export interface SendTextParams {
   tenantId: string;
   appointmentId?: string;
   customerId?: string;
+  session?: string;
   type?: 'TEXT' | 'INTERACTIVE' | 'TEMPLATE';
 }
 
@@ -16,6 +18,7 @@ export interface SendButtonsParams {
   tenantId: string;
   appointmentId?: string;
   customerId?: string;
+  session?: string;
 }
 
 export interface SendTemplateParams {
@@ -26,6 +29,7 @@ export interface SendTemplateParams {
   tenantId: string;
   appointmentId?: string;
   customerId?: string;
+  session?: string;
 }
 
 export interface ProviderResponse {
@@ -42,6 +46,74 @@ export interface IWhatsAppProvider {
 }
 
 /**
+ * WAHA (WhatsApp HTTP API) Provider (Official Production Transport)
+ */
+export class WahaWhatsAppProvider implements IWhatsAppProvider {
+  private client: WahaClient;
+
+  constructor(client?: WahaClient) {
+    this.client = client || wahaClient;
+  }
+
+  async sendText(params: SendTextParams): Promise<ProviderResponse> {
+    const res = await this.client.sendText({
+      to: params.to,
+      text: params.text,
+      session: params.session || 'default',
+      tenantId: params.tenantId,
+      appointmentId: params.appointmentId,
+      customerId: params.customerId,
+    });
+
+    if (res.success) {
+      await prisma.whatsappMessage.create({
+        data: {
+          barbershopId: params.tenantId,
+          customerId: params.customerId || null,
+          phone: params.to,
+          direction: 'OUTBOUND',
+          type: params.type || 'TEXT',
+          content: params.text,
+          status: 'SENT',
+          providerMessageId: res.messageId || null,
+          appointmentId: params.appointmentId || null,
+        },
+      }).catch((err) => console.warn('[WAHA] DB log error:', err));
+
+      return { success: true, messageId: res.messageId, status: 'SENT' };
+    }
+
+    return { success: false, error: res.error };
+  }
+
+  async sendButtons(params: SendButtonsParams): Promise<ProviderResponse> {
+    const formatted = `${params.bodyText}\n\nOpções:\n` + params.buttons.map((b, i) => `${i + 1}️⃣ ${b.title}`).join('\n');
+    return this.sendText({
+      to: params.to,
+      text: formatted,
+      tenantId: params.tenantId,
+      appointmentId: params.appointmentId,
+      customerId: params.customerId,
+      session: params.session,
+      type: 'INTERACTIVE',
+    });
+  }
+
+  async sendTemplate(params: SendTemplateParams): Promise<ProviderResponse> {
+    const text = `[TEMPLATE: ${params.templateName}]`;
+    return this.sendText({
+      to: params.to,
+      text,
+      tenantId: params.tenantId,
+      appointmentId: params.appointmentId,
+      customerId: params.customerId,
+      session: params.session,
+      type: 'TEMPLATE',
+    });
+  }
+}
+
+/**
  * Mock WhatsApp Provider for local development, test automation and sandbox validation
  */
 export class MockWhatsAppProvider implements IWhatsAppProvider {
@@ -53,11 +125,10 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
     this.outboundHistory.push({
       to: params.to,
       content: params.text,
-      type: 'TEXT',
+      type: params.type || 'TEXT',
       timestamp: new Date(),
     });
 
-    // Persist in database
     await prisma.whatsappMessage.create({
       data: {
         barbershopId: params.tenantId,
@@ -105,7 +176,7 @@ export class MockWhatsAppProvider implements IWhatsAppProvider {
 }
 
 /**
- * Meta Cloud WhatsApp API Provider (Production)
+ * Meta Cloud WhatsApp API Provider
  */
 export class MetaCloudWhatsAppProvider implements IWhatsAppProvider {
   private apiKey: string;
@@ -118,7 +189,6 @@ export class MetaCloudWhatsAppProvider implements IWhatsAppProvider {
 
   async sendText(params: SendTextParams): Promise<ProviderResponse> {
     if (!this.apiKey || !this.phoneId) {
-      console.warn('Meta WhatsApp credentials missing, falling back to Mock Provider');
       return new MockWhatsAppProvider().sendText(params);
     }
 
@@ -139,9 +209,7 @@ export class MetaCloudWhatsAppProvider implements IWhatsAppProvider {
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error?.message || 'Meta WhatsApp API Error');
-      }
+      if (!res.ok) throw new Error(data.error?.message || 'Meta WhatsApp API Error');
 
       const messageId = data.messages?.[0]?.id || `meta_${Date.now()}`;
 
@@ -212,12 +280,16 @@ export class MetaCloudWhatsAppProvider implements IWhatsAppProvider {
   }
 }
 
-// Global Singleton Provider Instance
+// Global Singletons
 export const mockWhatsApp = new MockWhatsAppProvider();
+export const wahaWhatsApp = new WahaWhatsAppProvider();
 
 export function getWhatsAppProvider(customApiKey?: string, customPhoneId?: string): IWhatsAppProvider {
   if (process.env.WHATSAPP_PROVIDER === 'META' || (customApiKey && customPhoneId)) {
     return new MetaCloudWhatsAppProvider(customApiKey, customPhoneId);
+  }
+  if (process.env.WHATSAPP_PROVIDER === 'WAHA' || process.env.WAHA_URL) {
+    return wahaWhatsApp;
   }
   return mockWhatsApp;
 }

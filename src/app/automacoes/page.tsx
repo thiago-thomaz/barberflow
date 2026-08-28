@@ -382,42 +382,48 @@ export default function AutomacoesPage() {
                 </div>
               </div>
 
-              {/* Provider & Credentials Card */}
+              {/* WAHA Engine & Session Manager */}
               <div className="rounded-xl border border-[#22262E] bg-[#14171C] p-5 shadow-xl space-y-4">
                 <div className="flex items-center justify-between border-b border-[#22262E] pb-3">
                   <div className="flex items-center gap-2 text-white font-bold text-sm">
                     <Smartphone className="h-4 w-4 text-emerald-400" />
-                    <span>Conexão WhatsApp (Meta Cloud / n8n)</span>
+                    <span>Servidor WAHA (Transporte WhatsApp Oficial)</span>
                   </div>
-                  <span className="text-xs text-zinc-400">
-                    Provedor Ativo: <strong className="text-emerald-400">Mock & n8n Gateway</strong>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    https://evo.projetosunion.cloud
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <label className="block text-zinc-400 mb-1">Phone Number ID (Meta):</label>
-                    <input
-                      type="text"
-                      placeholder="Ex: 1048291029102"
-                      value={whatsappSettings.whatsappPhoneId}
-                      onChange={(e) => setWhatsappSettings({ ...whatsappSettings, whatsappPhoneId: e.target.value })}
-                      className="w-full rounded-lg border border-[#22262E] bg-[#0D0F12] px-3 py-2 text-white focus:outline-none focus:border-amber-500"
-                    />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 rounded-lg bg-[#0D0F12] border border-[#22262E] space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-zinc-500">Status da Sessão</span>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="font-bold text-emerald-400">Pronto para Conectar</span>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-zinc-400 mb-1">WhatsApp Cloud API Token:</label>
-                    <input
-                      type="password"
-                      placeholder="••••••••••••••••"
-                      value={whatsappSettings.whatsappApiKey}
-                      onChange={(e) => setWhatsappSettings({ ...whatsappSettings, whatsappApiKey: e.target.value })}
-                      className="w-full rounded-lg border border-[#22262E] bg-[#0D0F12] px-3 py-2 text-white focus:outline-none focus:border-amber-500"
-                    />
+
+                  <div className="p-3 rounded-lg bg-[#0D0F12] border border-[#22262E] space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-zinc-500">Instância WAHA</span>
+                    <span className="font-mono font-bold text-white block">session: default</span>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-[#0D0F12] border border-[#22262E] space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-zinc-500">Webhook n8n</span>
+                    <span className="font-mono font-bold text-amber-400 block">/barberflow-waha-inbound</span>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400 space-y-1">
+                <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-zinc-300">Webhook Configurado no WAHA:</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">HMAC + Replay Protection</span>
+                  </div>
+                  <code className="text-amber-400 break-all font-mono block bg-black/40 p-2 rounded border border-zinc-800">
+                    https://n8n.srv1194775.hstgr.cloud/webhook/barberflow-waha-inbound
+                  </code>
+                </div>
+              </div>
                   <span className="font-bold text-zinc-300 block">Endpoint de Webhook do WhatsApp:</span>
                   <code className="text-amber-400 break-all font-mono">
                     https://barber.projetosunion.cloud/api/webhooks/whatsapp
