@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
     const recurrenceMetrics = await getRecurrenceDashboardMetrics(barbershopId);
 
     // 3. Today Operating Capacity
-    const dayOfWeek = now.getDay();
+    const dayOfWeek = startOfToday.getDay();
     const businessHours = await prisma.businessHours.findUnique({
       where: {
         barbershopId_dayOfWeek: {
