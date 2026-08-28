@@ -412,16 +412,37 @@ export default function AgendaPage() {
 
         {/* DAY VIEW */}
         {viewMode === 'day' && (
-          <div className="rounded-xl border border-[#22262E] bg-[#14171C] p-4">
-            <div className="divide-y divide-[#22262E]/60">
-              {timeSlots.map((slot) => {
-                const slotAppointments = appointments.filter((app) => {
-                  const appDate = new Date(app.scheduledAt);
-                  const appTime = `${String(appDate.getHours()).padStart(2, '0')}:${String(
-                    appDate.getMinutes()
-                  ).padStart(2, '0')}`;
-                  return appTime === slot;
-                });
+          <div className="space-y-4">
+            {/* Quick summary bar if there are appointments */}
+            {appointments.length > 0 && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
+                  <Clock className="h-4 w-4" />
+                  <span>{appointments.length} Agendamento(s) para este dia</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {appointments.map((app) => (
+                    <button
+                      key={app.id}
+                      onClick={() => setSelectedApp(app)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#2A2E35] bg-[#0D0F12] px-2.5 py-1 text-xs text-zinc-200 hover:border-amber-500 hover:text-white transition-all shadow-sm"
+                    >
+                      <span className="font-mono font-bold text-amber-400">{formatTime(app.scheduledAt)}</span>
+                      <span className="font-medium text-white">{app.customer?.name}</span>
+                      <span className="text-[10px] text-zinc-500">({app.barber?.name?.split(' ')[0]})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-xl border border-[#22262E] bg-[#14171C] p-4">
+              <div className="divide-y divide-[#22262E]/60">
+                {timeSlots.map((slot) => {
+                  const slotAppointments = appointments.filter((app) => {
+                    const appTime = formatTime(app.scheduledAt);
+                    return appTime === slot;
+                  });
 
                 return (
                   <div key={slot} className="py-2 flex items-start gap-4 min-h-[52px]">
@@ -474,9 +495,10 @@ export default function AgendaPage() {
               })}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* WEEK VIEW */}
+      {/* WEEK VIEW */}
         {viewMode === 'week' && (
           <div className="rounded-xl border border-[#22262E] bg-[#14171C] p-4 overflow-x-auto">
             <div className="grid grid-cols-7 gap-2 min-w-[700px]">

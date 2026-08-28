@@ -46,7 +46,9 @@ export async function POST(
     }
 
     const duration = service.durationMin || 30;
-    const startDateTime = new Date(`${date}T${time}:00`);
+    // Explicitly parse in Brazil UTC-3 timezone
+    const dateTimeStr = date.includes('T') ? date : `${date}T${time}:00-03:00`;
+    const startDateTime = new Date(dateTimeStr);
     if (isNaN(startDateTime.getTime())) {
       return NextResponse.json({ error: 'Data e horário inválidos' }, { status: 400 });
     }
