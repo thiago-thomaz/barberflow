@@ -428,11 +428,11 @@ async function main() {
     }
   }
 
-  // 12. Create n8n Webhook configuration placeholder
+  // 12. Create n8n Webhook configuration
   await prisma.webhook.create({
     data: {
       barbershopId: imperialShop.id,
-      url: 'https://n8n.webhook.exemplo/webhook/barberflow-imperial',
+      url: 'https://n8n.srv1194775.hstgr.cloud/webhook/barberflow-events',
       secret: 'whsec_barberflow_n8n_demo_secret_2026',
       isActive: true,
       events: JSON.stringify(['*']),
