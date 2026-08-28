@@ -20,6 +20,9 @@ import {
 export default function FinanceiroPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom'>('this_month');
+  const [customStart, setCustomStart] = useState<string>('');
+  const [customEnd, setCustomEnd] = useState<string>('');
 
   const fetchFinancialData = async () => {
     try {
@@ -40,11 +43,92 @@ export default function FinanceiroPage() {
     fetchFinancialData();
   }, []);
 
+  const allPayments: any[] = data?.recentPayments || [];
+
+  // Filter payments by selected period
+  const filteredPayments = React.useMemo(() => {
+    if (!allPayments.length) return [];
+    const now = new Date();
+
+    if (period === 'today') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      return allPayments.filter((p) => {
+        const d = new Date(p.createdAt);
+        return d >= start && d <= end;
+      });
+    }
+
+    if (period === 'yesterday') {
+      const y = new Date(now);
+      y.setDate(y.getDate() - 1);
+      const start = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 0, 0, 0);
+      const end = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999);
+      return allPayments.filter((p) => {
+        const d = new Date(p.createdAt);
+        return d >= start && d <= end;
+      });
+    }
+
+    if (period === 'this_week') {
+      const d = new Date(now);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(d.setDate(diff));
+      monday.setHours(0, 0, 0, 0);
+      return allPayments.filter((p) => new Date(p.createdAt) >= monday);
+    }
+
+    if (period === 'last_week') {
+      const d = new Date(now);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1) - 7;
+      const lastMonday = new Date(d.setDate(diff));
+      lastMonday.setHours(0, 0, 0, 0);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastSunday.getDate() + 6);
+      lastSunday.setHours(23, 59, 59, 999);
+      return allPayments.filter((p) => {
+        const pDate = new Date(p.createdAt);
+        return pDate >= lastMonday && pDate <= lastSunday;
+      });
+    }
+
+    if (period === 'this_month') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      return allPayments.filter((p) => new Date(p.createdAt) >= start);
+    }
+
+    if (period === 'last_month') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+      return allPayments.filter((p) => {
+        const pDate = new Date(p.createdAt);
+        return pDate >= start && pDate <= end;
+      });
+    }
+
+    if (period === 'custom') {
+      return allPayments.filter((p) => {
+        const pDate = new Date(p.createdAt);
+        if (customStart && pDate < new Date(`${customStart}T00:00:00`)) return false;
+        if (customEnd && pDate > new Date(`${customEnd}T23:59:59`)) return false;
+        return true;
+      });
+    }
+
+    return allPayments;
+  }, [allPayments, period, customStart, customEnd]);
+
+  // Derived filtered metrics
+  const filteredRevenue = filteredPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+  const filteredCount = filteredPayments.length;
+  const filteredAvgTicket = filteredCount > 0 ? filteredRevenue / filteredCount : 0;
+
   const summary = data?.summary;
   const topServices = data?.topServices || [];
   const barberRevenues = data?.barberRevenues || [];
   const paymentMethods = data?.paymentMethods || [];
-  const recentPayments = data?.recentPayments || [];
 
   return (
     <AppShell
@@ -52,19 +136,70 @@ export default function FinanceiroPage() {
       subtitle="Controle de receitas, ticket médio, comissões por barbeiro e métodos de pagamento"
     >
       <div className="space-y-6">
+        {/* Period Filter Bar */}
+        <div className="flex flex-col lg:flex-row gap-3 items-start lg:items-center justify-between bg-[#14171C] p-4 rounded-xl border border-[#22262E]">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-zinc-400">Filtrar Período:</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'today', label: 'Hoje' },
+                { id: 'yesterday', label: 'Ontem' },
+                { id: 'this_week', label: 'Esta Semana' },
+                { id: 'last_week', label: 'Semana Passada' },
+                { id: 'this_month', label: 'Este Mês' },
+                { id: 'last_month', label: 'Mês Passado' },
+                { id: 'custom', label: 'Personalizado' },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setPeriod(item.id as any)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                    period === item.id
+                      ? 'bg-amber-500 text-black border-amber-500 shadow-md shadow-amber-500/20'
+                      : 'bg-zinc-800/80 text-zinc-300 hover:text-white border-zinc-700/60 hover:bg-zinc-700'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom Date Inputs if Custom selected */}
+          {period === 'custom' && (
+            <div className="flex items-center gap-2 bg-[#0D0F12] p-1.5 rounded-lg border border-[#22262E]">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="bg-transparent text-xs text-amber-400 px-2 py-1 focus:outline-none cursor-pointer"
+                placeholder="De"
+              />
+              <span className="text-xs text-zinc-600">até</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="bg-transparent text-xs text-amber-400 px-2 py-1 focus:outline-none cursor-pointer"
+                placeholder="Até"
+              />
+            </div>
+          )}
+        </div>
+
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Faturamento Hoje"
-            value={formatCurrency(summary?.revenueToday || 0)}
-            subtitle="Receita realizada hoje"
+            title="Faturamento do Período"
+            value={formatCurrency(filteredRevenue || 0)}
+            subtitle={`${filteredCount} pagamento(s) no filtro`}
             icon={DollarSign}
             highlight="emerald"
           />
           <StatCard
-            title="Faturamento da Semana"
-            value={formatCurrency(summary?.revenueWeek || 0)}
-            subtitle="Acumulado semanal"
+            title="Faturamento Hoje"
+            value={formatCurrency(summary?.revenueToday || 0)}
+            subtitle="Receita realizada hoje"
             icon={TrendingUp}
             highlight="blue"
           />
@@ -76,9 +211,9 @@ export default function FinanceiroPage() {
             highlight="gold"
           />
           <StatCard
-            title="Ticket Médio"
-            value={formatCurrency(summary?.avgTicket || 0)}
-            subtitle={`${summary?.totalTransactions || 0} atendimentos pagos`}
+            title="Ticket Médio (Período)"
+            value={formatCurrency(filteredAvgTicket || 0)}
+            subtitle={`Média por atendimento`}
             icon={Wallet}
             highlight="none"
           />
@@ -212,28 +347,36 @@ export default function FinanceiroPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#22262E]/60">
-                {recentPayments.map((p: any) => (
-                  <tr key={p.id} className="hover:bg-[#1A1D23]/50 transition-colors">
-                    <td className="py-2.5 px-3 text-zinc-400">
-                      {formatDate(p.createdAt)} às {formatTime(p.createdAt)}
-                    </td>
-                    <td className="py-2.5 px-3 font-semibold text-white">
-                      {p.customer?.name || 'Cliente Balcão'}
-                    </td>
-                    <td className="py-2.5 px-3 text-zinc-300">{p.barber?.name || '-'}</td>
-                    <td className="py-2.5 px-3 text-zinc-300">
-                      {p.appointment?.service?.name || 'Atendimento'}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span className="px-2 py-0.5 rounded bg-zinc-800 text-[10px] font-medium text-zinc-300 border border-zinc-700">
-                        {p.method}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-bold text-emerald-400">
-                      {formatCurrency(p.amount)}
+                {filteredPayments.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-xs text-zinc-500">
+                      Nenhum pagamento encontrado para o período selecionado.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredPayments.map((p: any) => (
+                    <tr key={p.id} className="hover:bg-[#1A1D23]/50 transition-colors">
+                      <td className="py-2.5 px-3 text-zinc-400">
+                        {formatDate(p.createdAt)} às {formatTime(p.createdAt)}
+                      </td>
+                      <td className="py-2.5 px-3 font-semibold text-white">
+                        {p.customer?.name || 'Cliente Balcão'}
+                      </td>
+                      <td className="py-2.5 px-3 text-zinc-300">{p.barber?.name || '-'}</td>
+                      <td className="py-2.5 px-3 text-zinc-300">
+                        {p.appointment?.service?.name || 'Atendimento'}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-[10px] border border-amber-500/20">
+                          {p.method}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-emerald-400 font-mono">
+                        {formatCurrency(p.amount)}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

@@ -56,7 +56,18 @@ export default function DashboardPage() {
       title="Painel de Controle"
       subtitle="Visão geral da operação de hoje, faturamento e oportunidades de recorrência"
       actions={
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#14171C] border border-[#22262E] text-xs font-semibold text-zinc-300">
+            <Calendar className="h-3.5 w-3.5 text-amber-400" />
+            <span className="capitalize">
+              {new Date().toLocaleDateString('pt-BR', {
+                weekday: 'short',
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </span>
+          </div>
           <Link
             href="/recorrencia"
             className="flex items-center gap-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs font-bold text-amber-400 hover:bg-amber-500/20 transition-all shadow-sm"

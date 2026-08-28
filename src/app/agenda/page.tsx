@@ -150,6 +150,43 @@ export default function AgendaPage() {
     setCurrentDate(new Date());
   };
 
+  const handlePreset = (preset: 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month') => {
+    const now = new Date();
+    if (preset === 'today') {
+      setCurrentDate(now);
+      setViewMode('day');
+    } else if (preset === 'yesterday') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 1);
+      setCurrentDate(d);
+      setViewMode('day');
+    } else if (preset === 'this_week') {
+      setCurrentDate(now);
+      setViewMode('week');
+    } else if (preset === 'last_week') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      setCurrentDate(d);
+      setViewMode('week');
+    } else if (preset === 'this_month') {
+      const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      setCurrentDate(d);
+      setViewMode('week');
+    } else if (preset === 'last_month') {
+      const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      setCurrentDate(d);
+      setViewMode('week');
+    }
+  };
+
+  const handleDirectDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value) {
+      const [y, m, d] = e.target.value.split('-').map(Number);
+      const newD = new Date(y, m - 1, d);
+      setCurrentDate(newD);
+    }
+  };
+
   const openNewAppointment = (defaultTime?: string) => {
     setNewForm({
       customerId: customers[0]?.id || '',
@@ -333,36 +370,75 @@ export default function AgendaPage() {
     >
       <div className="space-y-4">
         {/* Controls Bar */}
-        <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-[#14171C] p-4 rounded-xl border border-[#22262E]">
-          {/* Date Navigator */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={prevDate}
-              className="p-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700 hover:bg-zinc-700"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              onClick={goToToday}
-              className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-semibold text-amber-400 border border-zinc-700 hover:bg-zinc-700"
-            >
-              Hoje
-            </button>
-            <button
-              onClick={nextDate}
-              className="p-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700 hover:bg-zinc-700"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+        <div className="flex flex-col lg:flex-row gap-3 items-start lg:items-center justify-between bg-[#14171C] p-4 rounded-xl border border-[#22262E]">
+          {/* Left: Date Navigator & Presets */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 bg-[#0D0F12] p-1 rounded-lg border border-[#22262E]">
+              <button
+                onClick={prevDate}
+                title="Anterior"
+                className="p-1.5 rounded-md bg-zinc-800/80 text-zinc-300 hover:text-white border border-zinc-700/60 hover:bg-zinc-700 transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              
+              <div className="relative flex items-center">
+                <input
+                  type="date"
+                  value={currentDate.toISOString().split('T')[0]}
+                  onChange={handleDirectDateChange}
+                  className="bg-transparent text-xs font-bold text-amber-400 px-2 py-1 focus:outline-none cursor-pointer"
+                />
+              </div>
 
-            <span className="ml-2 font-bold text-sm text-white capitalize">
-              {currentDate.toLocaleDateString('pt-BR', {
-                weekday: 'short',
-                day: '2-digit',
-                month: 'long',
-                year: 'numeric',
-              })}
-            </span>
+              <button
+                onClick={nextDate}
+                title="Próximo"
+                className="p-1.5 rounded-md bg-zinc-800/80 text-zinc-300 hover:text-white border border-zinc-700/60 hover:bg-zinc-700 transition-colors"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Quick Period Presets */}
+            <div className="flex items-center gap-1 overflow-x-auto py-1">
+              <button
+                onClick={() => handlePreset('today')}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-xs font-semibold text-zinc-300 hover:text-amber-400 border border-zinc-700/60 transition-colors"
+              >
+                Hoje
+              </button>
+              <button
+                onClick={() => handlePreset('yesterday')}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-xs font-semibold text-zinc-300 hover:text-amber-400 border border-zinc-700/60 transition-colors"
+              >
+                Ontem
+              </button>
+              <button
+                onClick={() => handlePreset('this_week')}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-xs font-semibold text-zinc-300 hover:text-amber-400 border border-zinc-700/60 transition-colors"
+              >
+                Esta Semana
+              </button>
+              <button
+                onClick={() => handlePreset('last_week')}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-xs font-semibold text-zinc-300 hover:text-amber-400 border border-zinc-700/60 transition-colors"
+              >
+                Semana Passada
+              </button>
+              <button
+                onClick={() => handlePreset('this_month')}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-xs font-semibold text-zinc-300 hover:text-amber-400 border border-zinc-700/60 transition-colors"
+              >
+                Este Mês
+              </button>
+              <button
+                onClick={() => handlePreset('last_month')}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-xs font-semibold text-zinc-300 hover:text-amber-400 border border-zinc-700/60 transition-colors"
+              >
+                Mês Passado
+              </button>
+            </div>
           </div>
 
           {/* View Mode & Barber Filter */}
