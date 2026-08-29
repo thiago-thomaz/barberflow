@@ -424,12 +424,6 @@ export default function AutomacoesPage() {
                   </code>
                 </div>
               </div>
-                  <span className="font-bold text-zinc-300 block">Endpoint de Webhook do WhatsApp:</span>
-                  <code className="text-amber-400 break-all font-mono">
-                    https://barber.projetosunion.cloud/api/webhooks/whatsapp
-                  </code>
-                </div>
-              </div>
             </div>
 
             {/* Live Chat Simulator Column */}
