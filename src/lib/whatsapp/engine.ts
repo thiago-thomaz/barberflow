@@ -111,11 +111,12 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   const lower = text.toLowerCase();
 
   // 1. Resolve Barbershop Tenant
-  const shop = await prisma.barbershop.findFirst({
+  let shop = await prisma.barbershop.findFirst({
     where: {
       OR: [
         { id: incoming.tenantSlugOrId },
         { slug: incoming.tenantSlugOrId },
+        { phone: { contains: incoming.tenantSlugOrId?.replace(/\D/g, '') || 'xyz' } },
       ],
       isActive: true,
     },
@@ -124,6 +125,23 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       barbers: { where: { isActive: true, deletedAt: null } },
     },
   });
+
+  // Fallback: If not found, try slug 'barber-shop' or first active shop
+  if (!shop) {
+    shop = await prisma.barbershop.findFirst({
+      where: { slug: 'barber-shop', isActive: true },
+      include: {
+        services: { where: { isActive: true, deletedAt: null } },
+        barbers: { where: { isActive: true, deletedAt: null } },
+      },
+    }) || await prisma.barbershop.findFirst({
+      where: { isActive: true },
+      include: {
+        services: { where: { isActive: true, deletedAt: null } },
+        barbers: { where: { isActive: true, deletedAt: null } },
+      },
+    });
+  }
 
   if (!shop) {
     return {
