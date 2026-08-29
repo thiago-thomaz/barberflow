@@ -93,10 +93,13 @@ export default function ConfiguracoesPage() {
     fetchData();
   }, []);
 
+  const [shopError, setShopError] = useState('');
+
   const handleSaveShop = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingShop(true);
     setSuccessShop(false);
+    setShopError('');
     try {
       const res = await fetch('/api/barbershop', {
         method: 'PATCH',
@@ -109,11 +112,11 @@ export default function ConfiguracoesPage() {
         setSuccessShop(true);
         setTimeout(() => setSuccessShop(false), 4000);
       } else {
-        alert(data.error || 'Erro ao salvar os dados da barbearia.');
+        setShopError(data.error || 'Erro ao salvar os dados da barbearia.');
       }
     } catch (err: any) {
       console.error('Save error:', err);
-      alert('Falha de conexão ao salvar dados: ' + err.message);
+      setShopError('Falha de conexão ao salvar dados: ' + err.message);
     } finally {
       setSavingShop(false);
     }
@@ -242,6 +245,13 @@ export default function ConfiguracoesPage() {
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-300 flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
               <span>Dados da barbearia atualizados com sucesso!</span>
+            </div>
+          )}
+
+          {shopError && (
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs text-rose-300 flex items-center gap-2">
+              <span className="font-bold">Erro:</span>
+              <span>{shopError}</span>
             </div>
           )}
 
