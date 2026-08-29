@@ -96,16 +96,24 @@ export default function ConfiguracoesPage() {
   const handleSaveShop = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingShop(true);
+    setSuccessShop(false);
     try {
       const res = await fetch('/api/barbershop', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(shopForm),
       });
-      if (res.ok) {
+      const data = await res.json();
+      if (res.ok && data.shop) {
+        setShop(data.shop);
         setSuccessShop(true);
-        setTimeout(() => setSuccessShop(false), 3000);
+        setTimeout(() => setSuccessShop(false), 4000);
+      } else {
+        alert(data.error || 'Erro ao salvar os dados da barbearia.');
       }
+    } catch (err: any) {
+      console.error('Save error:', err);
+      alert('Falha de conexão ao salvar dados: ' + err.message);
     } finally {
       setSavingShop(false);
     }
@@ -213,17 +221,27 @@ export default function ConfiguracoesPage() {
             <button
               type="submit"
               disabled={savingShop}
-              className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3.5 py-1.5 text-xs font-bold text-black hover:bg-amber-400 transition-all disabled:opacity-50"
+              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all disabled:opacity-50 ${
+                successShop
+                  ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20'
+                  : 'bg-amber-500 text-black hover:bg-amber-400'
+              }`}
             >
-              <Save className="h-3.5 w-3.5" />
-              <span>{savingShop ? 'Salvando...' : 'Salvar Dados'}</span>
+              {successShop ? (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              <span>
+                {savingShop ? 'Salvando...' : successShop ? 'Salvo com Sucesso!' : 'Salvar Dados'}
+              </span>
             </button>
           </div>
 
           {successShop && (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-300 flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              <span>Dados da barbearia atualizados!</span>
+              <span>Dados da barbearia atualizados com sucesso!</span>
             </div>
           )}
 
