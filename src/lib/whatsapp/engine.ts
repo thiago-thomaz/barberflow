@@ -163,8 +163,14 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     },
   }).catch(() => {});
 
-  // 2. Handle LGPD Opt-out ("SAIR", "PARAR", "CANCELAR MENSAGENS")
-  if (lower === 'sair' || lower === 'parar' || lower === 'optout') {
+  // 2. Handle LGPD Opt-out vs Session Exit
+  const isLgpdOptOut = ['descadastrar', 'cancelar mensagens', 'optout', 'parar notificacoes', 'bloquear mensagens'].includes(lower);
+  const isSessionExit = [
+    'sair', '#sair', 'encerrar', '#encerrar', 'cancelar', '#cancelar',
+    'fim', 'fechar', 'tchau', 'obrigado', 'obrigada', 'valeu', 'para', 'pare'
+  ].includes(lower) || (lower === '0' && session?.state === 'IDLE');
+
+  if (isLgpdOptOut) {
     await prisma.customer.updateMany({
       where: {
         barbershopId: shop.id,
@@ -187,9 +193,31 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       },
     });
 
-    const reply = `Você cancelou o recebimento de mensagens de marketing da ${shop.name}.\n\nSeus agendamentos continuarão ativos normalmente. Para reativar o atendimento automático, envie *MENU* a qualquer momento.`;
+    const reply = `Você cancelou o recebimento de mensagens automáticas da *${shop.name}*.\n\nSeus agendamentos continuarão ativos normalmente. Para reativar o atendimento a qualquer momento, basta enviar *MENU* ou *OI*.`;
     await getWhatsAppProvider().sendText({ to: phone, text: reply, tenantId: shop.id });
     return { reply, state: 'OPTED_OUT' };
+  }
+
+  if (isSessionExit) {
+    await prisma.whatsappSession.upsert({
+      where: { barbershopId_phone: { barbershopId: shop.id, phone } },
+      create: {
+        barbershopId: shop.id,
+        phone,
+        state: 'IDLE',
+        context: JSON.stringify({}),
+        expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000),
+      },
+      update: {
+        state: 'IDLE',
+        context: JSON.stringify({}),
+        expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000),
+      },
+    });
+
+    const reply = `Atendimento encerrado com sucesso! 😊\n\nQuando quiser agendar ou consultar horários na *${shop.name}*, basta enviar um *Oi* ou *MENU* a qualquer momento.\n\n💈 Agradecemos seu contato e até breve!`;
+    await getWhatsAppProvider().sendText({ to: phone, text: reply, tenantId: shop.id });
+    return { reply, state: 'IDLE' };
   }
 
   // 3. Find or Create Session
@@ -227,15 +255,15 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
 
   let context = JSON.parse(session.context || '{}');
 
-  // Reset to Menu if user types "menu", "oi", "ola", "iniciar", "voltar"
-  if (['menu', 'oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'começar', 'inicio', 'iniciar', 'ajuda', 'voltar'].includes(lower)) {
+  // Reset to Menu if user types "menu", "oi", "ola", "iniciar", "começar"
+  if (['menu', 'oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'começar', 'inicio', 'iniciar', 'ajuda'].includes(lower)) {
     session = await prisma.whatsappSession.update({
       where: { id: session.id },
       data: { state: 'IDLE', context: JSON.stringify({}) },
     });
 
     const expiredNotice = isExpired ? '_(Seu atendimento anterior expirou)_\n\n' : '';
-    const welcome = `${expiredNotice}Olá! 👋 Sou o assistente virtual da *${shop.name}*.\n\nComo posso te ajudar hoje?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n\n_Envie o número ou digite o que deseja (ex: "Quero cortar cabelo amanhã")._`;
+    const welcome = `${expiredNotice}Olá! 👋 Sou o assistente virtual da *${shop.name}*.\n\nComo posso te ajudar hoje?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n0️⃣ *Encerrar atendimento*\n\n_Envie o número da opção ou digite o que deseja (ex: "Quero cortar cabelo amanhã")._`;
 
     await getWhatsAppProvider().sendText({ to: phone, text: welcome, tenantId: shop.id });
     return { reply: welcome, state: 'IDLE' };
@@ -249,7 +277,11 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   // STATE: IDLE
   // -------------------------------------------------------------
   if (session.state === 'IDLE') {
-    if (lower === '1' || lower.includes('agendar') || lower.includes('marcar') || lower.includes('corte') || lower.includes('barba')) {
+    if (lower === '0' || lower.includes('encerrar') || lower.includes('sair')) {
+      reply = `Atendimento encerrado com sucesso! 😊\n\nQuando quiser agendar ou consultar horários na *${shop.name}*, basta enviar um *Oi* ou *MENU* a qualquer momento.\n\n💈 Agradecemos seu contato e até breve!`;
+      nextState = 'IDLE';
+      context = {};
+    } else if (lower === '1' || lower.includes('agendar') || lower.includes('marcar') || lower.includes('corte') || lower.includes('barba')) {
       nextState = 'SELECTING_SERVICE';
       context = {};
 
@@ -257,7 +289,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
         .map((s, idx) => `${idx + 1}️⃣ *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
         .join('\n');
 
-      reply = `Perfeito! 😊 Qual serviço você deseja agendar?\n\n${serviceList}\n\n_Digite o número do serviço desejado:_`;
+      reply = `Perfeito! 😊 Qual serviço você deseja agendar?\n\n${serviceList}\n0️⃣ *Voltar ao menu principal*\n\n_Digite o número do serviço ou envie 0 para voltar (ou digite ENCERRAR):_`;
     } else if (lower === '2' || lower.includes('proximo') || lower.includes('próximo') || lower.includes('quando')) {
       // Check next appointment
       const nextApp = await prisma.appointment.findFirst({
@@ -272,10 +304,10 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       });
 
       if (!nextApp) {
-        reply = `Não encontrei nenhum agendamento futuro para você na *${shop.name}*. 😊\n\nDeseja agendar um horário?\n1️⃣ Sim, quero agendar\n2️⃣ Voltar ao menu`;
+        reply = `Não encontrei nenhum agendamento futuro para você na *${shop.name}*. 😊\n\nDeseja agendar um horário?\n1️⃣ Sim, quero agendar\n2️⃣ Voltar ao menu\n0️⃣ Encerrar atendimento`;
       } else {
         const calUrl = `https://barber.projetosunion.cloud/agendamento/${nextApp.publicToken}`;
-        reply = `Encontrei seu próximo horário: 💈\n\n📅 *Data:* ${formatBrazilDate(nextApp.scheduledAt)}\n🕐 *Horário:* ${formatBrazilTime(nextApp.scheduledAt)}\n✂️ *Serviço:* ${nextApp.service?.name || nextApp.serviceNameSnapshot}\n👤 *Barbeiro:* ${nextApp.barber?.name}\n💰 *Valor:* R$ ${nextApp.price.toFixed(2).replace('.', ',')}\n\n🔗 *Detalhes e Calendário:* ${calUrl}\n\nOpções:\n1️⃣ Manter agendamento\n2️⃣ Cancelar este horário\n3️⃣ Remarcar para outra data`;
+        reply = `Encontrei seu próximo horário: 💈\n\n📅 *Data:* ${formatBrazilDate(nextApp.scheduledAt)}\n🕐 *Horário:* ${formatBrazilTime(nextApp.scheduledAt)}\n✂️ *Serviço:* ${nextApp.service?.name || nextApp.serviceNameSnapshot}\n👤 *Barbeiro:* ${nextApp.barber?.name}\n💰 *Valor:* R$ ${nextApp.price.toFixed(2).replace('.', ',')}\n\n🔗 *Detalhes e Calendário:* ${calUrl}\n\nOpções:\n1️⃣ Manter agendamento\n2️⃣ Cancelar este horário\n3️⃣ Remarcar para outra data\n0️⃣ Voltar ao menu`;
       }
     } else if (lower === '3' || lower.includes('cancelar')) {
       const activeApps = await prisma.appointment.findMany({
@@ -295,14 +327,14 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
         const app = activeApps[0];
         context.cancellingAppointmentId = app.id;
         nextState = 'CANCELLING';
-        reply = `Encontrei seu agendamento:\n\n✂️ *${app.service?.name}*\n📅 *${formatBrazilDate(app.scheduledAt)} às ${formatBrazilTime(app.scheduledAt)}*\n👤 *${app.barber?.name}*\n\nTem certeza que deseja cancelar?\n\n1️⃣ *Sim, confirmar cancelamento*\n2️⃣ *Não, manter horário*`;
+        reply = `Encontrei seu agendamento:\n\n✂️ *${app.service?.name}*\n📅 *${formatBrazilDate(app.scheduledAt)} às ${formatBrazilTime(app.scheduledAt)}*\n👤 *${app.barber?.name}*\n\nTem certeza que deseja cancelar?\n\n1️⃣ *Sim, confirmar cancelamento*\n2️⃣ *Não, manter horário*\n0️⃣ *Voltar ao menu*`;
       } else {
         context.availableCancelApps = activeApps.map((a) => a.id);
         nextState = 'CANCELLING';
         const list = activeApps
           .map((a, i) => `${i + 1}️⃣ ${a.service?.name} - ${formatBrazilDate(a.scheduledAt)} às ${formatBrazilTime(a.scheduledAt)} (${a.barber?.name})`)
           .join('\n');
-        reply = `Qual dos seus agendamentos você deseja cancelar?\n\n${list}\n\n_Envie o número do agendamento:_`;
+        reply = `Qual dos seus agendamentos você deseja cancelar?\n\n${list}\n0️⃣ *Voltar ao menu*\n\n_Envie o número do agendamento:_`;
       }
     } else if (lower === '4' || lower.includes('remarcar')) {
       const activeApps = await prisma.appointment.findMany({
@@ -317,19 +349,19 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       });
 
       if (activeApps.length === 0) {
-        reply = `Você não possui agendamentos futuros para remarcar. Deseja criar um novo agendamento?\n\n1️⃣ *Sim, agendar novo horário*\n2️⃣ *Voltar ao menu*`;
+        reply = `Você não possui agendamentos futuros para remarcar. Deseja criar um novo agendamento?\n\n1️⃣ *Sim, agendar novo horário*\n2️⃣ *Voltar ao menu*\n0️⃣ *Encerrar*`;
       } else {
         const app = activeApps[0];
         context.reschedulingAppointmentId = app.id;
         context.serviceId = app.serviceId;
         context.barberId = app.barberId;
         nextState = 'SELECTING_DATE';
-        reply = `Vamos remarcar seu horário de *${app.service?.name}* com *${app.barber?.name}*.\n\nPara qual data você prefere?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*`;
+        reply = `Vamos remarcar seu horário de *${app.service?.name}* com *${app.barber?.name}*.\n\nPara qual data você prefere?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar ao menu*`;
       }
-    } else if (lower === '5' || lower.includes('falar') || lower.includes('atendente')) {
-      reply = `📞 Você pode falar diretamente com nossa equipe:\n\n*${shop.name}*\nTelefone: ${shop.phone || 'Em breve'}\nEndereço: ${shop.address || 'Consulte nosso balcão'}\n\nEnvie *MENU* para voltar ao atendimento automático.`;
+    } else if (lower === '5' || lower.includes('falar') || lower.includes('atendente') || lower.includes('humano')) {
+      reply = `📞 Você pode falar diretamente com nossa equipe:\n\n💈 *${shop.name}*\n📱 Telefone / WhatsApp: ${shop.phone || 'Em breve'}\n📍 Endereço: ${shop.address || 'Consulte nosso balcão'}\n\nEnvie *MENU* para voltar ao atendimento automático ou *0* para encerrar.`;
     } else {
-      reply = `Não compreendi exatamente. 😊\n\nComo posso ajudar você na *${shop.name}*?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*`;
+      reply = `Não compreendi exatamente. 😊\n\nComo posso ajudar você na *${shop.name}*?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n0️⃣ *Encerrar atendimento*`;
     }
   }
 
@@ -337,37 +369,43 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   // STATE: SELECTING_SERVICE
   // -------------------------------------------------------------
   else if (session.state === 'SELECTING_SERVICE') {
-    const serviceIndex = parseInt(text, 10) - 1;
-    let selectedService = null;
-
-    if (!isNaN(serviceIndex) && shop.services[serviceIndex]) {
-      selectedService = shop.services[serviceIndex];
+    if (lower === '0' || lower === 'voltar' || lower === 'menu') {
+      nextState = 'IDLE';
+      context = {};
+      reply = `Menu Principal:\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n0️⃣ *Encerrar atendimento*`;
     } else {
-      // Find by name
-      selectedService = shop.services.find((s) => s.name.toLowerCase().includes(lower));
-    }
+      const serviceIndex = parseInt(text, 10) - 1;
+      let selectedService = null;
 
-    if (!selectedService) {
-      const serviceList = shop.services
-        .map((s, idx) => `${idx + 1}️⃣ *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')}`)
-        .join('\n');
-      reply = `Por favor, escolha uma das opções válidas:\n\n${serviceList}`;
-    } else {
-      context.serviceId = selectedService.id;
-      context.serviceName = selectedService.name;
-      context.price = selectedService.price;
-      context.durationMin = selectedService.durationMin;
-
-      // Ask for Barber preference if more than 1 barber
-      if (shop.barbers.length > 1) {
-        nextState = 'SELECTING_BARBER';
-        const barberList = shop.barbers.map((b, i) => `${i + 1}️⃣ *${b.name}*`).join('\n');
-        reply = `Ótimo! Você escolheu *${selectedService.name}* (R$ ${selectedService.price.toFixed(2).replace('.', ',')}).\n\nVocê tem preferência de barbeiro?\n\n${barberList}\n${shop.barbers.length + 1}️⃣ *Qualquer profissional disponível*\n\n_Digite o número do profissional:_`;
+      if (!isNaN(serviceIndex) && shop.services[serviceIndex]) {
+        selectedService = shop.services[serviceIndex];
       } else {
-        context.barberId = shop.barbers[0]?.id || 'ANY';
-        context.barberName = shop.barbers[0]?.name || 'Barbeiro da Casa';
-        nextState = 'SELECTING_DATE';
-        reply = `Ótimo! Você escolheu *${selectedService.name}*.\n\nPara qual data deseja agendar?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*`;
+        // Find by name
+        selectedService = shop.services.find((s) => s.name.toLowerCase().includes(lower));
+      }
+
+      if (!selectedService) {
+        const serviceList = shop.services
+          .map((s, idx) => `${idx + 1}️⃣ *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
+          .join('\n');
+        reply = `Por favor, escolha uma das opções válidas:\n\n${serviceList}\n0️⃣ *Voltar ao menu principal*\n\n_Digite o número do serviço ou 0 para voltar:_`;
+      } else {
+        context.serviceId = selectedService.id;
+        context.serviceName = selectedService.name;
+        context.price = selectedService.price;
+        context.durationMin = selectedService.durationMin;
+
+        // Ask for Barber preference if more than 1 barber
+        if (shop.barbers.length > 1) {
+          nextState = 'SELECTING_BARBER';
+          const barberList = shop.barbers.map((b, i) => `${i + 1}️⃣ *${b.name}*`).join('\n');
+          reply = `Ótimo! Você escolheu *${selectedService.name}* (R$ ${selectedService.price.toFixed(2).replace('.', ',')}).\n\nVocê tem preferência de barbeiro?\n\n${barberList}\n${shop.barbers.length + 1}️⃣ *Qualquer profissional disponível*\n0️⃣ *Voltar aos serviços*\n\n_Digite o número do profissional:_`;
+        } else {
+          context.barberId = shop.barbers[0]?.id || 'ANY';
+          context.barberName = shop.barbers[0]?.name || 'Barbeiro da Casa';
+          nextState = 'SELECTING_DATE';
+          reply = `Ótimo! Você escolheu *${selectedService.name}*.\n\nPara qual data deseja agendar?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar aos serviços*`;
+        }
       }
     }
   }
@@ -376,23 +414,31 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   // STATE: SELECTING_BARBER
   // -------------------------------------------------------------
   else if (session.state === 'SELECTING_BARBER') {
-    const barberIndex = parseInt(text, 10) - 1;
-    let selectedBarber = null;
-
-    if (barberIndex === shop.barbers.length || lower.includes('qualquer') || lower.includes('tanto faz')) {
-      context.barberId = 'ANY';
-      context.barberName = 'Qualquer profissional disponível';
-      nextState = 'SELECTING_DATE';
-      reply = `Perfeito! Vamos buscar os melhores horários com qualquer barbeiro disponível.\n\nPara qual data você deseja agendar?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*`;
-    } else if (!isNaN(barberIndex) && shop.barbers[barberIndex]) {
-      selectedBarber = shop.barbers[barberIndex];
-      context.barberId = selectedBarber.id;
-      context.barberName = selectedBarber.name;
-      nextState = 'SELECTING_DATE';
-      reply = `Perfeito! Barbeiro escolhido: *${selectedBarber.name}*.\n\nPara qual data você prefere?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*`;
+    if (lower === '0' || lower === 'voltar') {
+      nextState = 'SELECTING_SERVICE';
+      const serviceList = shop.services
+        .map((s, idx) => `${idx + 1}️⃣ *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
+        .join('\n');
+      reply = `Qual serviço você deseja agendar?\n\n${serviceList}\n0️⃣ *Voltar ao menu principal*\n\n_Digite o número do serviço:_`;
     } else {
-      const barberList = shop.barbers.map((b, i) => `${i + 1}️⃣ *${b.name}*`).join('\n');
-      reply = `Por favor, escolha uma opção válida de profissional:\n\n${barberList}\n${shop.barbers.length + 1}️⃣ *Qualquer profissional disponível*`;
+      const barberIndex = parseInt(text, 10) - 1;
+      let selectedBarber = null;
+
+      if (barberIndex === shop.barbers.length || lower.includes('qualquer') || lower.includes('tanto faz')) {
+        context.barberId = 'ANY';
+        context.barberName = 'Qualquer profissional disponível';
+        nextState = 'SELECTING_DATE';
+        reply = `Perfeito! Vamos buscar os melhores horários com qualquer barbeiro disponível.\n\nPara qual data você deseja agendar?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar*`;
+      } else if (!isNaN(barberIndex) && shop.barbers[barberIndex]) {
+        selectedBarber = shop.barbers[barberIndex];
+        context.barberId = selectedBarber.id;
+        context.barberName = selectedBarber.name;
+        nextState = 'SELECTING_DATE';
+        reply = `Perfeito! Barbeiro escolhido: *${selectedBarber.name}*.\n\nPara qual data você prefere?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar*`;
+      } else {
+        const barberList = shop.barbers.map((b, i) => `${i + 1}️⃣ *${b.name}*`).join('\n');
+        reply = `Por favor, escolha uma opção válida de profissional:\n\n${barberList}\n${shop.barbers.length + 1}️⃣ *Qualquer profissional disponível*\n0️⃣ *Voltar*`;
+      }
     }
   }
 
@@ -400,91 +446,105 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   // STATE: SELECTING_DATE
   // -------------------------------------------------------------
   else if (session.state === 'SELECTING_DATE') {
-    const parsedDate = parseDateInput(text);
-
-    if (!parsedDate) {
-      reply = `Não consegui entender a data. 😕\n\nPor favor, informe como:\n- *Hoje*\n- *Amanhã*\n- *Sábado*\n- Ou a data no formato *29/08*`;
-    } else {
-      context.date = parsedDate;
-
-      // Fetch available slots from database
-      const [year, month, day] = parsedDate.split('-').map(Number);
-      const targetDate = new Date(year, month - 1, day);
-      const dayOfWeek = targetDate.getDay();
-
-      const businessHours = await prisma.businessHours.findUnique({
-        where: { barbershopId_dayOfWeek: { barbershopId: shop.id, dayOfWeek } },
-      });
-
-      if (!businessHours || !businessHours.isOpen) {
-        reply = `A barbearia não abre nesta data (${parsedDate}). Por favor, escolha outro dia:`;
+    if (lower === '0' || lower === 'voltar') {
+      if (shop.barbers.length > 1) {
+        nextState = 'SELECTING_BARBER';
+        const barberList = shop.barbers.map((b, i) => `${i + 1}️⃣ *${b.name}*`).join('\n');
+        reply = `Você tem preferência de barbeiro?\n\n${barberList}\n${shop.barbers.length + 1}️⃣ *Qualquer profissional disponível*\n0️⃣ *Voltar aos serviços*\n\n_Digite o número do profissional:_`;
       } else {
-        const [openH, openM] = businessHours.openTime.split(':').map(Number);
-        const [closeH, closeM] = businessHours.closeTime.split(':').map(Number);
-        const duration = context.durationMin || 30;
+        nextState = 'SELECTING_SERVICE';
+        const serviceList = shop.services
+          .map((s, idx) => `${idx + 1}️⃣ *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
+          .join('\n');
+        reply = `Qual serviço você deseja agendar?\n\n${serviceList}\n0️⃣ *Voltar ao menu principal*\n\n_Digite o número do serviço:_`;
+      }
+    } else {
+      const parsedDate = parseDateInput(text);
 
-        // Fetch existing appointments on that day
-        const startOfDay = new Date(`${parsedDate}T00:00:00-03:00`);
-        const endOfDay = new Date(`${parsedDate}T23:59:59.999-03:00`);
+      if (!parsedDate) {
+        reply = `Não consegui entender a data. 😕\n\nPor favor, informe como:\n- *Hoje*\n- *Amanhã*\n- *Sábado*\n- Ou a data no formato *29/08*\n0️⃣ *Voltar*`;
+      } else {
+        context.date = parsedDate;
 
-        const existingApps = await prisma.appointment.findMany({
-          where: {
-            barbershopId: shop.id,
-            status: { notIn: ['CANCELADO', 'NO_SHOW'] },
-            scheduledAt: { gte: startOfDay, lte: endOfDay },
-          },
+        // Fetch available slots from database
+        const [year, month, day] = parsedDate.split('-').map(Number);
+        const targetDate = new Date(year, month - 1, day);
+        const dayOfWeek = targetDate.getDay();
+
+        const businessHours = await prisma.businessHours.findUnique({
+          where: { barbershopId_dayOfWeek: { barbershopId: shop.id, dayOfWeek } },
         });
 
-        // Compute open slots
-        const availableSlots: string[] = [];
-        let currentMinutes = openH * 60 + openM;
-        const closeMinutes = closeH * 60 + closeM;
+        if (!businessHours || !businessHours.isOpen) {
+          reply = `A barbearia não abre nesta data (${parsedDate}). Por favor, escolha outro dia:\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia*\n0️⃣ *Voltar*`;
+        } else {
+          const [openH, openM] = businessHours.openTime.split(':').map(Number);
+          const [closeH, closeM] = businessHours.closeTime.split(':').map(Number);
+          const duration = context.durationMin || 30;
 
-        while (currentMinutes + duration <= closeMinutes) {
-          const h = Math.floor(currentMinutes / 60);
-          const m = currentMinutes % 60;
-          const slotTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-          const slotStart = new Date(`${parsedDate}T${slotTime}:00-03:00`);
-          const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
+          // Fetch existing appointments on that day
+          const startOfDay = new Date(`${parsedDate}T00:00:00-03:00`);
+          const endOfDay = new Date(`${parsedDate}T23:59:59.999-03:00`);
 
-          if (slotStart > now) {
-            // Check barber conflict
-            let hasFreeBarber = false;
-            if (context.barberId && context.barberId !== 'ANY') {
-              const conflict = existingApps.some(
-                (a) => a.barberId === context.barberId && a.scheduledAt < slotEnd && a.endAt > slotStart
-              );
-              if (!conflict) hasFreeBarber = true;
-            } else {
-              // Any barber
-              for (const b of shop.barbers) {
+          const existingApps = await prisma.appointment.findMany({
+            where: {
+              barbershopId: shop.id,
+              status: { notIn: ['CANCELADO', 'NO_SHOW'] },
+              scheduledAt: { gte: startOfDay, lte: endOfDay },
+            },
+          });
+
+          // Compute open slots
+          const availableSlots: string[] = [];
+          let currentMinutes = openH * 60 + openM;
+          const closeMinutes = closeH * 60 + closeM;
+
+          while (currentMinutes + duration <= closeMinutes) {
+            const h = Math.floor(currentMinutes / 60);
+            const m = currentMinutes % 60;
+            const slotTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+            const slotStart = new Date(`${parsedDate}T${slotTime}:00-03:00`);
+            const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
+
+            if (slotStart > now) {
+              // Check barber conflict
+              let hasFreeBarber = false;
+              if (context.barberId && context.barberId !== 'ANY') {
                 const conflict = existingApps.some(
-                  (a) => a.barberId === b.id && a.scheduledAt < slotEnd && a.endAt > slotStart
+                  (a) => a.barberId === context.barberId && a.scheduledAt < slotEnd && a.endAt > slotStart
                 );
-                if (!conflict) {
-                  hasFreeBarber = true;
-                  break;
+                if (!conflict) hasFreeBarber = true;
+              } else {
+                // Any barber
+                for (const b of shop.barbers) {
+                  const conflict = existingApps.some(
+                    (a) => a.barberId === b.id && a.scheduledAt < slotEnd && a.endAt > slotStart
+                  );
+                  if (!conflict) {
+                    hasFreeBarber = true;
+                    break;
+                  }
                 }
               }
+
+              if (hasFreeBarber) availableSlots.push(slotTime);
             }
 
-            if (hasFreeBarber) availableSlots.push(slotTime);
+            currentMinutes += 30;
           }
 
-          currentMinutes += 30;
-        }
+          if (availableSlots.length === 0) {
+            reply = `Não encontramos horários disponíveis para o dia *${parsedDate}*. 😕\n\nDeseja escolher outra data?\n1️⃣ *Ver outro dia*\n2️⃣ *Voltar ao menu*`;
+          } else {
+            context.availableSlots = availableSlots.slice(0, 10); // Show top 10
+            nextState = 'SELECTING_TIME';
 
-        if (availableSlots.length === 0) {
-          reply = `Não encontramos horários disponíveis para o dia *${parsedDate}*. 😕\n\nDeseja escolher outra data?\n1️⃣ *Ver outro dia*\n2️⃣ *Voltar ao menu*`;
-        } else {
-          context.availableSlots = availableSlots.slice(0, 10); // Show top 10
-          nextState = 'SELECTING_TIME';
+            const slotList = context.availableSlots
+              .map((t: string, i: number) => `${i + 1}️⃣ *${t}*`)
+              .join('\n');
 
-          const slotList = context.availableSlots
-            .map((t: string, i: number) => `${i + 1}️⃣ *${t}*`)
-            .join('\n');
-
-          reply = `Horários disponíveis para *${parsedDate}*:\n\n${slotList}\n\n_Digite o número do horário desejado:_`;
+            reply = `Horários disponíveis para *${parsedDate}*:\n\n${slotList}\n0️⃣ *Escolher outra data*\n\n_Digite o número do horário desejado ou 0 para voltar:_`;
+          }
         }
       }
     }
@@ -494,41 +554,46 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   // STATE: SELECTING_TIME
   // -------------------------------------------------------------
   else if (session.state === 'SELECTING_TIME') {
-    const slotIdx = parseInt(text, 10) - 1;
-    let chosenTime: string | null = null;
-
-    if (!isNaN(slotIdx) && context.availableSlots && context.availableSlots[slotIdx]) {
-      chosenTime = context.availableSlots[slotIdx];
+    if (lower === '0' || lower === 'voltar') {
+      nextState = 'SELECTING_DATE';
+      reply = `Para qual data você prefere agendar?\n\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar*`;
     } else {
-      // Direct HH:MM match
-      const directMatch = text.match(/^(\d{1,2}):(\d{2})$/);
-      if (directMatch && context.availableSlots?.includes(text)) {
-        chosenTime = text;
-      }
-    }
+      const slotIdx = parseInt(text, 10) - 1;
+      let chosenTime: string | null = null;
 
-    if (!chosenTime) {
-      reply = `Por favor, selecione um número da lista de horários disponíveis.`;
-    } else {
-      context.time = chosenTime;
-
-      // Check if customer is registered
-      const existingCustomer = await prisma.customer.findFirst({
-        where: {
-          barbershopId: shop.id,
-          phone: { contains: phone.slice(-8) },
-          deletedAt: null,
-        },
-      });
-
-      if (!existingCustomer && !context.customerName) {
-        nextState = 'ASKING_NEW_CUSTOMER_NAME';
-        reply = `É seu primeiro agendamento na *${shop.name}*! 😊\n\nPor favor, informe seu *Nome Completo* para confirmarmos:`;
+      if (!isNaN(slotIdx) && context.availableSlots && context.availableSlots[slotIdx]) {
+        chosenTime = context.availableSlots[slotIdx];
       } else {
-        context.customerName = existingCustomer?.name || context.customerName || incoming.senderName || 'Cliente';
-        nextState = 'WAITING_CONFIRMATION';
+        // Direct HH:MM match
+        const directMatch = text.match(/^(\d{1,2}):(\d{2})$/);
+        if (directMatch && context.availableSlots?.includes(text)) {
+          chosenTime = text;
+        }
+      }
 
-        reply = `✂️ *Confirme seu Horário:*\n\n💈 *Barbearia:* ${shop.name}\n✂️ *Serviço:* ${context.serviceName}\n👤 *Barbeiro:* ${context.barberName}\n📅 *Data:* ${context.date}\n🕐 *Horário:* ${context.time}\n💰 *Valor:* R$ ${Number(context.price).toFixed(2).replace('.', ',')}\n\nConfirmar agendamento?\n1️⃣ *Sim, confirmar agora*\n2️⃣ *Não, cancelar*`;
+      if (!chosenTime) {
+        reply = `Por favor, selecione um número da lista de horários disponíveis ou digite 0 para voltar.`;
+      } else {
+        context.time = chosenTime;
+
+        // Check if customer is registered
+        const existingCustomer = await prisma.customer.findFirst({
+          where: {
+            barbershopId: shop.id,
+            phone: { contains: phone.slice(-8) },
+            deletedAt: null,
+          },
+        });
+
+        if (!existingCustomer && !context.customerName) {
+          nextState = 'ASKING_NEW_CUSTOMER_NAME';
+          reply = `É seu primeiro agendamento na *${shop.name}*! 😊\n\nPor favor, informe seu *Nome Completo* para confirmarmos:\n0️⃣ *Cancelar*`;
+        } else {
+          context.customerName = existingCustomer?.name || context.customerName || incoming.senderName || 'Cliente';
+          nextState = 'WAITING_CONFIRMATION';
+
+          reply = `✂️ *Confirme seu Horário:*\n\n💈 *Barbearia:* ${shop.name}\n✂️ *Serviço:* ${context.serviceName}\n👤 *Barbeiro:* ${context.barberName}\n📅 *Data:* ${context.date}\n🕐 *Horário:* ${context.time}\n💰 *Valor:* R$ ${Number(context.price).toFixed(2).replace('.', ',')}\n\nConfirmar agendamento?\n1️⃣ *Sim, confirmar agora*\n2️⃣ *Não, cancelar agendamento*\n0️⃣ *Voltar ao menu principal*`;
+        }
       }
     }
   }
@@ -537,14 +602,20 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   // STATE: ASKING_NEW_CUSTOMER_NAME
   // -------------------------------------------------------------
   else if (session.state === 'ASKING_NEW_CUSTOMER_NAME') {
-    const name = text.trim();
-    if (name.length < 2) {
-      reply = `Por favor, informe um nome válido.`;
+    if (lower === '0' || lower === 'cancelar' || lower === 'voltar') {
+      nextState = 'IDLE';
+      context = {};
+      reply = `Agendamento cancelado. 😊\n\nEnvie *MENU* quando quiser começar novamente.`;
     } else {
-      context.customerName = name;
-      nextState = 'WAITING_CONFIRMATION';
+      const name = text.trim();
+      if (name.length < 2) {
+        reply = `Por favor, informe um nome válido ou digite 0 para cancelar.`;
+      } else {
+        context.customerName = name;
+        nextState = 'WAITING_CONFIRMATION';
 
-      reply = `✂️ *Confirme seu Horário:*\n\n💈 *Barbearia:* ${shop.name}\n👤 *Cliente:* ${context.customerName}\n✂️ *Serviço:* ${context.serviceName}\n👤 *Barbeiro:* ${context.barberName}\n📅 *Data:* ${context.date}\n🕐 *Horário:* ${context.time}\n💰 *Valor:* R$ ${Number(context.price).toFixed(2).replace('.', ',')}\n\nConfirmar agendamento?\n1️⃣ *Sim, confirmar agora*\n2️⃣ *Não, cancelar*`;
+        reply = `✂️ *Confirme seu Horário:*\n\n💈 *Barbearia:* ${shop.name}\n👤 *Cliente:* ${context.customerName}\n✂️ *Serviço:* ${context.serviceName}\n👤 *Barbeiro:* ${context.barberName}\n📅 *Data:* ${context.date}\n🕐 *Horário:* ${context.time}\n💰 *Valor:* R$ ${Number(context.price).toFixed(2).replace('.', ',')}\n\nConfirmar agendamento?\n1️⃣ *Sim, confirmar agora*\n2️⃣ *Não, cancelar agendamento*\n0️⃣ *Voltar ao menu principal*`;
+      }
     }
   }
 
