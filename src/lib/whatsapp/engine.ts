@@ -8,9 +8,12 @@ import { publishEvent } from '@/lib/events';
 export const SESSION_TTL_MINUTES = 30;
 
 /**
- * Normalizes phone numbers to E.164 canonical format (e.g. 5514998016163)
+ * Normalizes phone numbers or WhatsApp JIDs (e.g. 5514998016163, @c.us, @lid)
  */
 export function normalizeWhatsAppPhone(phone: string): string {
+  if (phone.includes('@lid') || phone.includes('@c.us') || phone.includes('@g.us')) {
+    return phone;
+  }
   let digits = phone.replace(/\D/g, '');
   if (digits.length === 10 || digits.length === 11) {
     digits = `55${digits}`;
