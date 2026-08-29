@@ -163,64 +163,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     },
   }).catch(() => {});
 
-  // 2. Handle LGPD Opt-out vs Session Exit
-  const isLgpdOptOut = ['descadastrar', 'cancelar mensagens', 'optout', 'parar notificacoes', 'bloquear mensagens'].includes(lower);
-  const isSessionExit = [
-    'sair', '#sair', 'encerrar', '#encerrar', 'cancelar', '#cancelar',
-    'fim', 'fechar', 'tchau', 'obrigado', 'obrigada', 'valeu', 'para', 'pare'
-  ].includes(lower) || (lower === '0' && session?.state === 'IDLE');
-
-  if (isLgpdOptOut) {
-    await prisma.customer.updateMany({
-      where: {
-        barbershopId: shop.id,
-        phone: { contains: phone.slice(-8) },
-      },
-      data: { marketingOptIn: false },
-    });
-
-    await prisma.whatsappSession.upsert({
-      where: { barbershopId_phone: { barbershopId: shop.id, phone } },
-      create: {
-        barbershopId: shop.id,
-        phone,
-        state: 'OPTED_OUT',
-        expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000),
-      },
-      update: {
-        state: 'OPTED_OUT',
-        expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000),
-      },
-    });
-
-    const reply = `Você cancelou o recebimento de mensagens automáticas da *${shop.name}*.\n\nSeus agendamentos continuarão ativos normalmente. Para reativar o atendimento a qualquer momento, basta enviar *MENU* ou *OI*.`;
-    await getWhatsAppProvider().sendText({ to: phone, text: reply, tenantId: shop.id });
-    return { reply, state: 'OPTED_OUT' };
-  }
-
-  if (isSessionExit) {
-    await prisma.whatsappSession.upsert({
-      where: { barbershopId_phone: { barbershopId: shop.id, phone } },
-      create: {
-        barbershopId: shop.id,
-        phone,
-        state: 'IDLE',
-        context: JSON.stringify({}),
-        expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000),
-      },
-      update: {
-        state: 'IDLE',
-        context: JSON.stringify({}),
-        expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000),
-      },
-    });
-
-    const reply = `Atendimento encerrado com sucesso! 😊\n\nQuando quiser agendar ou consultar horários na *${shop.name}*, basta enviar um *Oi* ou *MENU* a qualquer momento.\n\n💈 Agradecemos seu contato e até breve!`;
-    await getWhatsAppProvider().sendText({ to: phone, text: reply, tenantId: shop.id });
-    return { reply, state: 'IDLE' };
-  }
-
-  // 3. Find or Create Session
+  // 2. Find or Create Session
   let session = await prisma.whatsappSession.findUnique({
     where: { barbershopId_phone: { barbershopId: shop.id, phone } },
   });
@@ -229,7 +172,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   let isExpired = false;
 
   if (!session || session.expiresAt < now) {
-    isExpired = !!session;
+    isExpired = !session;
     session = await prisma.whatsappSession.upsert({
       where: { barbershopId_phone: { barbershopId: shop.id, phone } },
       create: {
@@ -251,6 +194,50 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       where: { id: session.id },
       data: { expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000) },
     });
+  }
+
+  // 3. Handle LGPD Opt-out vs Session Exit
+  const isLgpdOptOut = ['descadastrar', 'cancelar mensagens', 'optout', 'parar notificacoes', 'bloquear mensagens'].includes(lower);
+  const isSessionExit = [
+    'sair', '#sair', 'encerrar', '#encerrar', 'cancelar', '#cancelar',
+    'fim', 'fechar', 'tchau', 'obrigado', 'obrigada', 'valeu', 'para', 'pare'
+  ].includes(lower) || (lower === '0' && session.state === 'IDLE');
+
+  if (isLgpdOptOut) {
+    await prisma.customer.updateMany({
+      where: {
+        barbershopId: shop.id,
+        phone: { contains: phone.slice(-8) },
+      },
+      data: { marketingOptIn: false },
+    });
+
+    await prisma.whatsappSession.update({
+      where: { id: session.id },
+      data: {
+        state: 'OPTED_OUT',
+        expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000),
+      },
+    });
+
+    const reply = `Você cancelou o recebimento de mensagens automáticas da *${shop.name}*.\n\nSeus agendamentos continuarão ativos normalmente. Para reativar o atendimento a qualquer momento, basta enviar *MENU* ou *OI*.`;
+    await getWhatsAppProvider().sendText({ to: phone, text: reply, tenantId: shop.id });
+    return { reply, state: 'OPTED_OUT' };
+  }
+
+  if (isSessionExit) {
+    await prisma.whatsappSession.update({
+      where: { id: session.id },
+      data: {
+        state: 'IDLE',
+        context: JSON.stringify({}),
+        expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000),
+      },
+    });
+
+    const reply = `Atendimento encerrado com sucesso! 😊\n\nQuando quiser agendar ou consultar horários na *${shop.name}*, basta enviar um *Oi* ou *MENU* a qualquer momento.\n\n💈 Agradecemos seu contato e até breve!`;
+    await getWhatsAppProvider().sendText({ to: phone, text: reply, tenantId: shop.id });
+    return { reply, state: 'IDLE' };
   }
 
   let context = JSON.parse(session.context || '{}');
