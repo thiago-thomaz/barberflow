@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma, ensureDatabaseSchema } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
 // GET /api/barbershop - Get current tenant profile
 export async function GET(req: NextRequest) {
   try {
+    await ensureDatabaseSchema();
     const session = getSessionFromRequest(req);
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
 // PATCH /api/barbershop - Update current tenant profile
 export async function PATCH(req: NextRequest) {
   try {
+    await ensureDatabaseSchema();
     const session = getSessionFromRequest(req);
     if (!session) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });

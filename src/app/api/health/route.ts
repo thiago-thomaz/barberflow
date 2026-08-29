@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma, ensureDatabaseSchema } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +9,8 @@ export async function GET() {
   let dbStatus = 'ok';
 
   try {
+    // Ensure SQLite schema is 100% updated with all columns and tables
+    await ensureDatabaseSchema();
     // Quick ping query
     await prisma.$queryRaw`SELECT 1`;
   } catch (error) {
