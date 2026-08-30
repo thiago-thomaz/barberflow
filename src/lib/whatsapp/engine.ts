@@ -195,9 +195,9 @@ function isRecentDuplicate(phone: string, text: string): boolean {
   }
   recentInboundCache.set(key, now);
   if (recentInboundCache.size > 500) {
-    for (const [k, v] of recentInboundCache.entries()) {
+    recentInboundCache.forEach((v, k) => {
       if (now - v > 10000) recentInboundCache.delete(k);
-    }
+    });
   }
   return false;
 }
