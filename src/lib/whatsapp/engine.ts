@@ -183,20 +183,20 @@ export function parseDateInput(input: string): string | null {
   return null;
 }
 
-// In-memory cache to prevent duplicate processing within 2 seconds
-const recentInboundCache = new Map<string, number>();
+// In-memory cache for recent providerMessageIds (prevents parallel webhook duplicate execution)
+const recentMessageIds = new Map<string, number>();
 
-function isRecentDuplicate(phone: string, text: string): boolean {
-  const key = `${phone}:${text}`;
+function isDuplicateMessageId(messageId?: string): boolean {
+  if (!messageId) return false;
   const now = Date.now();
-  const lastTime = recentInboundCache.get(key);
-  if (lastTime && now - lastTime < 2000) {
+  const lastTime = recentMessageIds.get(messageId);
+  if (lastTime && now - lastTime < 10000) {
     return true;
   }
-  recentInboundCache.set(key, now);
-  if (recentInboundCache.size > 500) {
-    recentInboundCache.forEach((v, k) => {
-      if (now - v > 10000) recentInboundCache.delete(k);
+  recentMessageIds.set(messageId, now);
+  if (recentMessageIds.size > 1000) {
+    recentMessageIds.forEach((v, k) => {
+      if (now - v > 30000) recentMessageIds.delete(k);
     });
   }
   return false;
@@ -206,16 +206,17 @@ function isRecentDuplicate(phone: string, text: string): boolean {
  * Core WhatsApp Conversational Engine
  */
 export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage): Promise<EngineResult> {
-  const phone = normalizeWhatsAppPhone(incoming.from);
-  const { cleanText, normalized, numericOption } = normalizeIncomingText(incoming.text);
-
-  // Anti-duplication: Ignore rapid duplicate messages from parallel webhooks (e.g. message vs message.any)
-  if (isRecentDuplicate(phone, cleanText)) {
+  // Anti-duplication: Ignore duplicate webhooks with the same messageId
+  if (incoming.messageId && isDuplicateMessageId(incoming.messageId)) {
     return {
       reply: '',
       state: 'DUPLICATE_IGNORED',
     };
   }
+
+  const phone = normalizeWhatsAppPhone(incoming.from);
+  const { cleanText, normalized, numericOption } = normalizeIncomingText(incoming.text);
+
 
   const phoneDigits = phone.replace(/\D/g, '');
   const phoneLast8 = phoneDigits.length >= 8 ? phoneDigits.slice(-8) : phoneDigits;
