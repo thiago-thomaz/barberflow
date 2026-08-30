@@ -11,10 +11,12 @@ export const SESSION_TTL_MINUTES = 30;
  * Normalizes phone numbers or WhatsApp JIDs (e.g. 5514998016163, @c.us, @lid)
  */
 export function normalizeWhatsAppPhone(phone: string): string {
-  if (phone.includes('@lid') || phone.includes('@c.us') || phone.includes('@g.us')) {
-    return phone;
+  if (!phone) return '';
+  const trimmed = phone.trim();
+  if (trimmed.includes('@lid') || trimmed.includes('@c.us') || trimmed.includes('@g.us')) {
+    return trimmed;
   }
-  let digits = phone.replace(/\D/g, '');
+  let digits = trimmed.replace(/\D/g, '');
   if (digits.length === 10 || digits.length === 11) {
     digits = `55${digits}`;
   }

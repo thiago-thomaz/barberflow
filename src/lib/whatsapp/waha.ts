@@ -55,12 +55,16 @@ export class WahaClient {
    * Normalize recipient phone to WAHA chat ID format (e.g. 5514998016163@c.us or 90464929759328@lid)
    */
   private formatChatId(phone: string): string {
-    if (phone.includes('@c.us') || phone.includes('@g.us') || phone.includes('@lid')) {
-      return phone;
+    const trimmed = phone.trim();
+    if (trimmed.includes('@c.us') || trimmed.includes('@g.us') || trimmed.includes('@lid')) {
+      return trimmed;
     }
-    const digits = phone.replace(/\D/g, '');
-    if (phone.includes('lid') || (digits.length >= 14 && digits.startsWith('904'))) {
+    const digits = trimmed.replace(/\D/g, '');
+    if (trimmed.toLowerCase().includes('lid') || (digits.length >= 14 && !digits.startsWith('55')) || digits.length >= 15) {
       return `${digits}@lid`;
+    }
+    if (digits.length === 10 || digits.length === 11) {
+      return `55${digits}@c.us`;
     }
     return `${digits}@c.us`;
   }
