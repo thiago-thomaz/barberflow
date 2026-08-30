@@ -183,12 +183,39 @@ export function parseDateInput(input: string): string | null {
   return null;
 }
 
+// In-memory cache to prevent duplicate processing within 2 seconds
+const recentInboundCache = new Map<string, number>();
+
+function isRecentDuplicate(phone: string, text: string): boolean {
+  const key = `${phone}:${text}`;
+  const now = Date.now();
+  const lastTime = recentInboundCache.get(key);
+  if (lastTime && now - lastTime < 2000) {
+    return true;
+  }
+  recentInboundCache.set(key, now);
+  if (recentInboundCache.size > 500) {
+    for (const [k, v] of recentInboundCache.entries()) {
+      if (now - v > 10000) recentInboundCache.delete(k);
+    }
+  }
+  return false;
+}
+
 /**
  * Core WhatsApp Conversational Engine
  */
 export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage): Promise<EngineResult> {
   const phone = normalizeWhatsAppPhone(incoming.from);
   const { cleanText, normalized, numericOption } = normalizeIncomingText(incoming.text);
+
+  // Anti-duplication: Ignore rapid duplicate messages from parallel webhooks (e.g. message vs message.any)
+  if (isRecentDuplicate(phone, cleanText)) {
+    return {
+      reply: '',
+      state: 'DUPLICATE_IGNORED',
+    };
+  }
 
   const phoneDigits = phone.replace(/\D/g, '');
   const phoneLast8 = phoneDigits.length >= 8 ? phoneDigits.slice(-8) : phoneDigits;
@@ -236,6 +263,24 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     };
   }
 
+  // Deduplicate by messageId in database
+  if (incoming.messageId) {
+    const existingMsg = await prisma.whatsappMessage.findFirst({
+      where: {
+        barbershopId: shop.id,
+        phone,
+        providerMessageId: incoming.messageId,
+        direction: 'INBOUND',
+      },
+    });
+    if (existingMsg) {
+      return {
+        reply: '',
+        state: 'DUPLICATE_IGNORED',
+      };
+    }
+  }
+
   // Log Inbound Message
   await prisma.whatsappMessage.create({
     data: {
@@ -248,6 +293,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       providerMessageId: incoming.messageId || null,
     },
   }).catch(() => {});
+
 
   // 2. Find or Create Session
   let session = await prisma.whatsappSession.findUnique({
