@@ -107,9 +107,14 @@ export interface EngineResult {
 /**
  * Parses user input for dates in America/Sao_Paulo
  */
-export function parseDateInput(input: string): string | null {
+export function parseDateInput(input: string, quickDateMap?: Record<string, string>): string | null {
   const { normalized, numericOption } = normalizeIncomingText(input);
   const now = new Date();
+
+  // If user selected a numeric option from dynamic quickDateMap, resolve immediately
+  if (numericOption && quickDateMap && quickDateMap[numericOption]) {
+    return quickDateMap[numericOption];
+  }
 
   // Helper to format YYYY-MM-DD
   const formatYMD = (d: Date) => {
@@ -119,11 +124,11 @@ export function parseDateInput(input: string): string | null {
     return `${y}-${m}-${day}`;
   };
 
-  if (numericOption === '1' || normalized === 'hoje' || normalized.includes('hoje')) {
+  if (normalized === 'hoje' || normalized.includes('hoje')) {
     return formatYMD(now);
   }
 
-  if (numericOption === '2' || normalized === 'amanha' || normalized.includes('amanha')) {
+  if (normalized === 'amanha' || normalized.includes('amanha')) {
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
     return formatYMD(tomorrow);
@@ -202,6 +207,81 @@ export function parseDateInput(input: string): string | null {
   }
 
   return null;
+}
+
+/**
+ * Dynamically builds a smart date selection prompt based on real business hours
+ */
+export async function buildDateSelectionPrompt(
+  shopId: string,
+  customHeader?: string
+): Promise<{ text: string; quickDateMap: Record<string, string> }> {
+  const now = new Date();
+  // Get current date string in Brazil timezone (YYYY-MM-DD)
+  const brazilDateStr = now.toLocaleDateString('en-CA', { timeZone: BRAZIL_TIMEZONE });
+  const [bYear, bMonth, bDay] = brazilDateStr.split('-').map(Number);
+  const brazilNowDate = new Date(bYear, bMonth - 1, bDay);
+
+  const brazilTimeStr = now.toLocaleTimeString('pt-BR', { timeZone: BRAZIL_TIMEZONE, hour12: false });
+  const [bHour, bMin] = brazilTimeStr.split(':').map(Number);
+  const currentMinutes = bHour * 60 + bMin;
+
+  const allHours = await prisma.businessHours.findMany({
+    where: { barbershopId: shopId },
+  });
+  const hoursMap = new Map(allHours.map((h) => [h.dayOfWeek, h]));
+
+  const weekdayNamesPt = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+
+  const openDays: { dateStr: string; label: string }[] = [];
+  const quickDateMap: Record<string, string> = {};
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(brazilNowDate);
+    d.setDate(d.getDate() + i);
+    const dayOfWeek = d.getDay();
+    const bh = hoursMap.get(dayOfWeek);
+
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const ymd = `${year}-${month}-${day}`;
+
+    // Today
+    if (i === 0) {
+      if (bh && bh.isOpen) {
+        const [closeH, closeM] = bh.closeTime.split(':').map(Number);
+        const closeMinutes = closeH * 60 + closeM;
+        if (currentMinutes + 30 < closeMinutes) {
+          openDays.push({ dateStr: ymd, label: `Hoje (${day}/${month})` });
+        }
+      }
+    } else if (i === 1) {
+      if (bh && bh.isOpen) {
+        openDays.push({ dateStr: ymd, label: `Amanhã (${weekdayNamesPt[dayOfWeek]} - ${day}/${month})` });
+      }
+    } else {
+      if (bh && bh.isOpen && openDays.length < 2) {
+        openDays.push({ dateStr: ymd, label: `${weekdayNamesPt[dayOfWeek]} (${day}/${month})` });
+      }
+    }
+  }
+
+  let optionsText = '';
+  openDays.slice(0, 2).forEach((item, idx) => {
+    const optNum = String(idx + 1);
+    quickDateMap[optNum] = item.dateStr;
+    optionsText += `${formatOptionNumber(idx + 1)} *${item.label}*\n`;
+  });
+
+  const nextOptIdx = Object.keys(quickDateMap).length + 1;
+  optionsText += `${formatOptionNumber(nextOptIdx)} *Outro dia (ex: Sábado ou 29/08)*\n`;
+  optionsText += `0️⃣ *Voltar*`;
+
+  const header = customHeader || 'Para qual data você prefere agendar?';
+  const text = `${header}\n\n${optionsText}`;
+
+  return { text, quickDateMap };
 }
 
 // In-memory cache for recent providerMessageIds (prevents parallel webhook duplicate execution)
@@ -587,7 +667,9 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
         context.serviceId = app.serviceId;
         context.barberId = app.barberId;
         nextState = 'SELECTING_DATE';
-        reply = `Vamos remarcar seu horário de *${app.service?.name}* com *${app.barber?.name}*.\n\nPara qual data você prefere?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar ao menu*`;
+        const datePrompt = await buildDateSelectionPrompt(shop.id, `Vamos remarcar seu horário de *${app.service?.name}* com *${app.barber?.name}*.`);
+        context.quickDateMap = datePrompt.quickDateMap;
+        reply = datePrompt.text;
       }
     } else if (isOption5) {
       reply = `📞 Você pode falar diretamente com nossa equipe:\n\n💈 *${shop.name}*\n📱 Telefone / WhatsApp: ${shop.phone || 'Em breve'}\n📍 Endereço: ${shop.address || 'Consulte nosso balcão'}\n\nEnvie *MENU* para voltar ao atendimento automático ou *0* para encerrar.`;
@@ -638,7 +720,9 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
           context.barberId = shop.barbers[0]?.id || 'ANY';
           context.barberName = shop.barbers[0]?.name || 'Barbeiro da Casa';
           nextState = 'SELECTING_DATE';
-          reply = `Ótimo! Você escolheu *${selectedService.name}*.\n\nPara qual data deseja agendar?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar aos serviços*`;
+          const datePrompt = await buildDateSelectionPrompt(shop.id, `Ótimo! Você escolheu *${selectedService.name}*.`);
+          context.quickDateMap = datePrompt.quickDateMap;
+          reply = datePrompt.text;
         }
       }
     }
@@ -667,13 +751,17 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
         context.barberId = 'ANY';
         context.barberName = 'Qualquer profissional disponível';
         nextState = 'SELECTING_DATE';
-        reply = `Perfeito! Vamos buscar os melhores horários com qualquer barbeiro disponível.\n\nPara qual data você deseja agendar?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar*`;
+        const datePrompt = await buildDateSelectionPrompt(shop.id, `Perfeito! Vamos buscar os melhores horários com qualquer profissional disponível.`);
+        context.quickDateMap = datePrompt.quickDateMap;
+        reply = datePrompt.text;
       } else if (!isNaN(barberIndex) && shop.barbers[barberIndex]) {
         selectedBarber = shop.barbers[barberIndex];
         context.barberId = selectedBarber.id;
         context.barberName = selectedBarber.name;
         nextState = 'SELECTING_DATE';
-        reply = `Perfeito! Barbeiro escolhido: *${selectedBarber.name}*.\n\nPara qual data você prefere?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar*`;
+        const datePrompt = await buildDateSelectionPrompt(shop.id, `Perfeito! Barbeiro escolhido: *${selectedBarber.name}*.`);
+        context.quickDateMap = datePrompt.quickDateMap;
+        reply = datePrompt.text;
       } else {
         // Match by name
         selectedBarber = shop.barbers.find((b) => {
@@ -685,7 +773,9 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
           context.barberId = selectedBarber.id;
           context.barberName = selectedBarber.name;
           nextState = 'SELECTING_DATE';
-          reply = `Perfeito! Barbeiro escolhido: *${selectedBarber.name}*.\n\nPara qual data você prefere?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar*`;
+          const datePrompt = await buildDateSelectionPrompt(shop.id, `Perfeito! Barbeiro escolhido: *${selectedBarber.name}*.`);
+          context.quickDateMap = datePrompt.quickDateMap;
+          reply = datePrompt.text;
         } else {
           const barberList = shop.barbers.map((b, i) => `${formatOptionNumber(i + 1)} *${b.name}*`).join('\n');
           reply = `Por favor, escolha uma opção válida de profissional:\n\n${barberList}\n${formatOptionNumber(shop.barbers.length + 1)} *Qualquer profissional disponível*\n0️⃣ *Voltar*`;
@@ -701,22 +791,25 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     if (numericOption === '0' || normalized === '0' || normalized === 'voltar') {
       if (shop.barbers.length > 1) {
         nextState = 'SELECTING_BARBER';
-        const barberList = shop.barbers.map((b, i) => `${i + 1}️⃣ *${b.name}*`).join('\n');
-        reply = `Você tem preferência de barbeiro?\n\n${barberList}\n${shop.barbers.length + 1}️⃣ *Qualquer profissional disponível*\n0️⃣ *Voltar aos serviços*\n\n_Digite o número do profissional:_`;
+        const barberList = shop.barbers.map((b, i) => `${formatOptionNumber(i + 1)} *${b.name}*`).join('\n');
+        reply = `Você tem preferência de barbeiro?\n\n${barberList}\n${formatOptionNumber(shop.barbers.length + 1)} *Qualquer profissional disponível*\n0️⃣ *Voltar aos serviços*\n\n_Digite o número do profissional:_`;
       } else {
         nextState = 'SELECTING_SERVICE';
         const serviceList = shop.services
-          .map((s, idx) => `${idx + 1}️⃣ *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
+          .map((s, idx) => `${formatOptionNumber(idx + 1)} *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
           .join('\n');
         reply = `Qual serviço você deseja agendar?\n\n${serviceList}\n0️⃣ *Voltar ao menu principal*\n\n_Digite o número do serviço:_`;
       }
-    } else if (numericOption === '3' && !normalized.includes('/') && !normalized.includes('-')) {
-      reply = `Por favor, digite o dia da semana desejado (ex: *Sábado*, *Segunda-feira*) ou a data no formato *DD/MM* (ex: 29/08):\n0️⃣ *Voltar*`;
     } else {
-      const parsedDate = parseDateInput(cleanText);
+      const parsedDate = parseDateInput(cleanText, context.quickDateMap);
 
       if (!parsedDate) {
-        reply = `Não consegui entender a data. 😕\n\nPor favor, informe como:\n- *Hoje*\n- *Amanhã*\n- *Sábado*\n- Ou a data no formato *29/08*\n0️⃣ *Voltar*`;
+        const datePrompt = await buildDateSelectionPrompt(
+          shop.id,
+          `Não consegui entender a data. 😕\nPor favor, escolha uma das opções ou envie uma data como *Sábado* ou *31/08*:`
+        );
+        context.quickDateMap = datePrompt.quickDateMap;
+        reply = datePrompt.text;
       } else {
         context.date = parsedDate;
 
@@ -729,8 +822,16 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
           where: { barbershopId_dayOfWeek: { barbershopId: shop.id, dayOfWeek } },
         });
 
+        const weekdayNames = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+        const dayName = weekdayNames[dayOfWeek];
+
         if (!businessHours || !businessHours.isOpen) {
-          reply = `A barbearia não abre nesta data (${parsedDate}). Por favor, escolha outro dia:\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia*\n0️⃣ *Voltar*`;
+          const datePrompt = await buildDateSelectionPrompt(
+            shop.id,
+            `A barbearia não abre aos *${dayName.toLowerCase()}s* (${day}/${month}). Por favor, escolha um dia em que atendemos:`
+          );
+          context.quickDateMap = datePrompt.quickDateMap;
+          reply = datePrompt.text;
         } else {
           const [openH, openM] = businessHours.openTime.split(':').map(Number);
           const [closeH, closeM] = businessHours.closeTime.split(':').map(Number);
@@ -788,7 +889,12 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
           }
 
           if (availableSlots.length === 0) {
-            reply = `Não encontramos horários disponíveis para o dia *${parsedDate}*. 😕\n\nDeseja escolher outra data?\n1️⃣ *Ver outro dia*\n2️⃣ *Voltar ao menu*`;
+            const datePrompt = await buildDateSelectionPrompt(
+              shop.id,
+              `Não encontramos horários disponíveis para o dia *${day}/${month}*. 😕\nPor favor, escolha outra data:`
+            );
+            context.quickDateMap = datePrompt.quickDateMap;
+            reply = datePrompt.text;
           } else {
             context.availableSlots = availableSlots.slice(0, 10); // Show top 10
             nextState = 'SELECTING_TIME';
@@ -810,7 +916,9 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   else if (session.state === 'SELECTING_TIME') {
     if (numericOption === '0' || normalized === '0' || normalized === 'voltar') {
       nextState = 'SELECTING_DATE';
-      reply = `Para qual data você prefere agendar?\n\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar*`;
+      const datePrompt = await buildDateSelectionPrompt(shop.id);
+      context.quickDateMap = datePrompt.quickDateMap;
+      reply = datePrompt.text;
     } else {
       const slotIdx = numericOption ? parseInt(numericOption, 10) - 1 : parseInt(cleanText, 10) - 1;
       let chosenTime: string | null = null;
