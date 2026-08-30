@@ -68,10 +68,31 @@ export function normalizeIncomingText(rawText: string): {
   return { cleanText: text, normalized, numericOption };
 }
 
+/**
+ * Format option numbers cleanly using Unicode emojis 0-10 or bold digits
+ */
+export function formatOptionNumber(num: number): string {
+  const emojiMap: Record<number, string> = {
+    0: '0️⃣',
+    1: '1️⃣',
+    2: '2️⃣',
+    3: '3️⃣',
+    4: '4️⃣',
+    5: '5️⃣',
+    6: '6️⃣',
+    7: '7️⃣',
+    8: '8️⃣',
+    9: '9️⃣',
+    10: '🔟',
+  };
+  return emojiMap[num] || `*${num}.*`;
+}
+
 export interface WhatsAppIncomingMessage {
   from: string; // phone or LID
   text: string;
-  tenantSlugOrId: string;
+  tenantSlugOrId?: string;
+  receiverPhone?: string;
   messageId?: string;
   senderName?: string;
 }
@@ -222,26 +243,54 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   const phoneLast8 = phoneDigits.length >= 8 ? phoneDigits.slice(-8) : phoneDigits;
 
   // 1. Resolve Barbershop Tenant
-  let shop = await prisma.barbershop.findFirst({
-    where: {
-      OR: [
-        { id: incoming.tenantSlugOrId },
-        { slug: incoming.tenantSlugOrId },
-        { phone: { contains: incoming.tenantSlugOrId?.replace(/\D/g, '') || 'xyz' } },
-      ],
-      isActive: true,
-    },
-    include: {
-      services: { where: { isActive: true, deletedAt: null } },
-      barbers: { where: { isActive: true, deletedAt: null } },
-    },
-  });
+  let shop = null;
 
-  // Fallback: If not found, try slug 'barbearia-imperial', 'barber-shop' or first active shop
+  // 1.1 Match by receiver phone number (the WhatsApp number that received the message, e.g. 5514988016163)
+  if (incoming.receiverPhone) {
+    const rxDigits = incoming.receiverPhone.replace(/\D/g, '');
+    const rxLast8 = rxDigits.length >= 8 ? rxDigits.slice(-8) : rxDigits;
+    shop = await prisma.barbershop.findFirst({
+      where: {
+        phone: { contains: rxLast8 },
+        isActive: true,
+      },
+      include: {
+        services: { where: { isActive: true, deletedAt: null } },
+        barbers: { where: { isActive: true, deletedAt: null } },
+      },
+    });
+  }
+
+  // 1.2 Match by explicit tenantSlug or ID
+  if (!shop && incoming.tenantSlugOrId) {
+    const cleanTenant = incoming.tenantSlugOrId.trim();
+    const tenantDigits = cleanTenant.replace(/\D/g, '');
+    const tenantLast8 = tenantDigits.length >= 8 ? tenantDigits.slice(-8) : tenantDigits;
+
+    shop = await prisma.barbershop.findFirst({
+      where: {
+        OR: [
+          { id: cleanTenant },
+          { slug: cleanTenant },
+          ...(tenantLast8 ? [{ phone: { contains: tenantLast8 } }] : []),
+        ],
+        isActive: true,
+      },
+      include: {
+        services: { where: { isActive: true, deletedAt: null } },
+        barbers: { where: { isActive: true, deletedAt: null } },
+      },
+    });
+  }
+
+  // 1.3 Fallback: Find shop with active WhatsApp phone or slug 'barber-shop' or first active shop
   if (!shop) {
     shop = await prisma.barbershop.findFirst({
       where: {
-        OR: [{ slug: 'barbearia-imperial' }, { slug: 'barber-shop' }],
+        OR: [
+          { phone: { contains: '988016163' } },
+          { slug: 'barber-shop' },
+        ],
         isActive: true,
       },
       include: {
@@ -509,7 +558,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
         context.availableCancelApps = activeApps.map((a) => a.id);
         nextState = 'CANCELLING';
         const list = activeApps
-          .map((a, i) => `${i + 1}️⃣ ${a.service?.name} - ${formatBrazilDate(a.scheduledAt)} às ${formatBrazilTime(a.scheduledAt)} (${a.barber?.name})`)
+          .map((a, i) => `${formatOptionNumber(i + 1)} ${a.service?.name} - ${formatBrazilDate(a.scheduledAt)} às ${formatBrazilTime(a.scheduledAt)} (${a.barber?.name})`)
           .join('\n');
         reply = `Qual dos seus agendamentos você deseja cancelar?\n\n${list}\n0️⃣ *Voltar ao menu*\n\n_Envie o número do agendamento:_`;
       }
@@ -571,7 +620,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
 
       if (!selectedService) {
         const serviceList = shop.services
-          .map((s, idx) => `${idx + 1}️⃣ *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
+          .map((s, idx) => `${formatOptionNumber(idx + 1)} *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
           .join('\n');
         reply = `Por favor, escolha uma das opções válidas:\n\n${serviceList}\n0️⃣ *Voltar ao menu principal*\n\n_Digite o número do serviço ou 0 para voltar:_`;
       } else {
@@ -583,8 +632,8 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
         // Ask for Barber preference if more than 1 barber
         if (shop.barbers.length > 1) {
           nextState = 'SELECTING_BARBER';
-          const barberList = shop.barbers.map((b, i) => `${i + 1}️⃣ *${b.name}*`).join('\n');
-          reply = `Ótimo! Você escolheu *${selectedService.name}* (R$ ${selectedService.price.toFixed(2).replace('.', ',')}).\n\nVocê tem preferência de barbeiro?\n\n${barberList}\n${shop.barbers.length + 1}️⃣ *Qualquer profissional disponível*\n0️⃣ *Voltar aos serviços*\n\n_Digite o número do profissional:_`;
+          const barberList = shop.barbers.map((b, i) => `${formatOptionNumber(i + 1)} *${b.name}*`).join('\n');
+          reply = `Ótimo! Você escolheu *${selectedService.name}* (R$ ${selectedService.price.toFixed(2).replace('.', ',')}).\n\nVocê tem preferência de barbeiro?\n\n${barberList}\n${formatOptionNumber(shop.barbers.length + 1)} *Qualquer profissional disponível*\n0️⃣ *Voltar aos serviços*\n\n_Digite o número do profissional:_`;
         } else {
           context.barberId = shop.barbers[0]?.id || 'ANY';
           context.barberName = shop.barbers[0]?.name || 'Barbeiro da Casa';
@@ -602,7 +651,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     if (numericOption === '0' || normalized === '0' || normalized === 'voltar') {
       nextState = 'SELECTING_SERVICE';
       const serviceList = shop.services
-        .map((s, idx) => `${idx + 1}️⃣ *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
+        .map((s, idx) => `${formatOptionNumber(idx + 1)} *${s.name}* — R$ ${s.price.toFixed(2).replace('.', ',')} (${s.durationMin} min)`)
         .join('\n');
       reply = `Qual serviço você deseja agendar?\n\n${serviceList}\n0️⃣ *Voltar ao menu principal*\n\n_Digite o número do serviço:_`;
     } else {
@@ -638,8 +687,8 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
           nextState = 'SELECTING_DATE';
           reply = `Perfeito! Barbeiro escolhido: *${selectedBarber.name}*.\n\nPara qual data você prefere?\n1️⃣ *Hoje*\n2️⃣ *Amanhã*\n3️⃣ *Outro dia (ex: Sábado ou 29/08)*\n0️⃣ *Voltar*`;
         } else {
-          const barberList = shop.barbers.map((b, i) => `${i + 1}️⃣ *${b.name}*`).join('\n');
-          reply = `Por favor, escolha uma opção válida de profissional:\n\n${barberList}\n${shop.barbers.length + 1}️⃣ *Qualquer profissional disponível*\n0️⃣ *Voltar*`;
+          const barberList = shop.barbers.map((b, i) => `${formatOptionNumber(i + 1)} *${b.name}*`).join('\n');
+          reply = `Por favor, escolha uma opção válida de profissional:\n\n${barberList}\n${formatOptionNumber(shop.barbers.length + 1)} *Qualquer profissional disponível*\n0️⃣ *Voltar*`;
         }
       }
     }
@@ -745,7 +794,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
             nextState = 'SELECTING_TIME';
 
             const slotList = context.availableSlots
-              .map((t: string, i: number) => `${i + 1}️⃣ *${t}*`)
+              .map((t: string, i: number) => `${formatOptionNumber(i + 1)} *${t}*`)
               .join('\n');
 
             reply = `Horários disponíveis para *${parsedDate}*:\n\n${slotList}\n0️⃣ *Escolher outra data*\n\n_Digite o número do horário desejado ou 0 para voltar:_`;
@@ -782,7 +831,10 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       }
 
       if (!chosenTime) {
-        reply = `Por favor, selecione um número da lista de horários disponíveis ou digite 0 para voltar.`;
+        const slotList = context.availableSlots
+          ? context.availableSlots.map((t: string, i: number) => `${formatOptionNumber(i + 1)} *${t}*`).join('\n')
+          : '';
+        reply = `Por favor, escolha um dos horários válidos:\n\n${slotList}\n0️⃣ *Escolher outra data*\n\n_Digite o número do horário (ex: 1 ou ${context.availableSlots?.[0] || '09:00'}):_`;
       } else {
         context.time = chosenTime;
 
@@ -849,7 +901,9 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       normalized === '2' ||
       normalized.includes('nao') ||
       normalized.includes('cancel') ||
-      normalized.includes('desist');
+      normalized.includes('desist') ||
+      numericOption === '0' ||
+      normalized === '0';
 
     if (isConfirm) {
       const { serviceId, barberId, date, time, customerName, durationMin, price } = context;
@@ -933,7 +987,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
               where: { id: context.reschedulingAppointmentId },
               data: {
                 status: 'CANCELADO',
-                cancelReason: 'Remarcado via WhatsApp',
+                cancelReason: 'Remarcado pelo cliente via WhatsApp',
                 cancelledAt: new Date(),
               },
             });
@@ -967,7 +1021,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
           await cancelAppointmentReminders(context.reschedulingAppointmentId).catch(() => {});
         }
 
-        // Schedule anti-duplication reminders for new appointment
+        // Schedule Automated Reminders (24h, 6h, 2h, 1h)
         await scheduleAppointmentReminders({
           appointmentId: bookingResult.appointment.id,
           barbershopId: shop.id,
@@ -997,22 +1051,11 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
           }
         ).catch(() => {});
 
-        // Build Confirmation Message with Links
+        // Build Confirmation Message with Short Google Calendar & Public Links
+        const shortCalUrl = `https://barber.projetosunion.cloud/cal/${bookingResult.appointment.publicToken}`;
         const publicUrl = `https://barber.projetosunion.cloud/agendamento/${bookingResult.appointment.publicToken}`;
-        const gcalUrl = generateGoogleCalendarUrl({
-          id: bookingResult.appointment.id,
-          publicToken: bookingResult.appointment.publicToken,
-          scheduledAt: bookingResult.appointment.scheduledAt,
-          endAt: bookingResult.appointment.endAt,
-          price: bookingResult.appointment.price,
-          serviceName: context.serviceName,
-          barberName: bookingResult.barber.name,
-          shopName: shop.name,
-          shopAddress: shop.address,
-          publicUrl,
-        });
 
-        reply = `✅ *Agendamento Confirmado!* 🎉\n\n✂️ *Serviço:* ${context.serviceName}\n👤 *Barbeiro:* ${bookingResult.barber.name}\n📅 *Data:* ${date}\n🕐 *Horário:* ${time}\n📍 *Local:* ${shop.name}\n💰 *Valor:* R$ ${Number(price).toFixed(2).replace('.', ',')}\n\nVocê receberá lembretes automáticos antes do seu horário.\n\n📅 *Adicionar ao Google Calendar:*\n${gcalUrl}\n\n📥 *Ver detalhes ou cancelar:*\n${publicUrl}\n\n_Envie *MENU* a qualquer momento para novas opções._`;
+        reply = `✅ *Agendamento Confirmado!* 🎉\n\n✂️ *Serviço:* ${context.serviceName}\n👤 *Barbeiro:* ${bookingResult.barber.name}\n📅 *Data:* ${date}\n🕐 *Horário:* ${time}\n📍 *Local:* ${shop.name}\n💰 *Valor:* R$ ${Number(price).toFixed(2).replace('.', ',')}\n\nVocê receberá lembretes automáticos antes do seu horário.\n\n📅 *Adicionar ao Google Calendar:*\n${shortCalUrl}\n\n📥 *Ver detalhes ou cancelar:*\n${publicUrl}\n\n_Envie *MENU* a qualquer momento para novas opções._`;
         nextState = 'IDLE';
         context = {};
       } catch (err: any) {
@@ -1023,7 +1066,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
         }
         nextState = 'IDLE';
       }
-    } else if (isCancel || numericOption === '0' || normalized === '0') {
+    } else if (isCancel) {
       reply = `Agendamento cancelado. 😊\n\nEnvie *MENU* quando quiser começar novamente.`;
       nextState = 'IDLE';
       context = {};

@@ -46,11 +46,13 @@ export async function POST(req: NextRequest) {
       }
 
       const tenantPhoneId = metadata?.phone_number_id;
+      const receiverPhone = metadata?.display_phone_number || tenantPhoneId;
 
       const result = await processWhatsAppMessage({
         from,
         text,
-        tenantSlugOrId: tenantPhoneId || 'barbearia-imperial',
+        tenantSlugOrId: tenantPhoneId,
+        receiverPhone,
         messageId: message.id,
       });
 
@@ -58,7 +60,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Direct format (n8n, Simulator, or Custom Gateway)
-    const { from, text, tenantSlug, barbershopId, messageId, senderName } = body;
+    const { from, text, tenantSlug, barbershopId, receiverPhone, messageId, senderName } = body;
 
     if (!from || !text) {
       return NextResponse.json(
@@ -70,7 +72,8 @@ export async function POST(req: NextRequest) {
     const result = await processWhatsAppMessage({
       from,
       text,
-      tenantSlugOrId: tenantSlug || barbershopId || 'barbearia-imperial',
+      tenantSlugOrId: tenantSlug || barbershopId,
+      receiverPhone: receiverPhone,
       messageId,
       senderName,
     });
