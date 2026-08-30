@@ -1036,41 +1036,60 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   // STATE: CANCELLING
   // -------------------------------------------------------------
   else if (session.state === 'CANCELLING') {
-    const isConfirmCancel = numericOption === '1' ||
-      normalized === '1' ||
-      normalized.includes('sim') ||
-      normalized.includes('cancel');
-
-    if (isConfirmCancel) {
-      const appId = context.cancellingAppointmentId;
-      if (appId) {
-        await prisma.appointment.update({
-          where: { id: appId },
-          data: {
-            status: 'CANCELADO',
-            cancelReason: 'Cancelado pelo cliente via WhatsApp',
-            cancelledAt: new Date(),
-          },
+    if (context.availableCancelApps && !context.cancellingAppointmentId) {
+      const idx = numericOption ? parseInt(numericOption, 10) - 1 : parseInt(cleanText, 10) - 1;
+      const targetAppId = context.availableCancelApps[idx];
+      if (numericOption === '0' || normalized === '0' || normalized === 'voltar') {
+        reply = `Cancelamento não realizado. Seu agendamento continua ativo! 👍\n\nEnvie *MENU* para ver as opções.`;
+        nextState = 'IDLE';
+        context = {};
+      } else if (targetAppId) {
+        context.cancellingAppointmentId = targetAppId;
+        const targetApp = await prisma.appointment.findUnique({
+          where: { id: targetAppId },
+          include: { service: true, barber: true },
         });
-
-        await cancelAppointmentReminders(appId);
-
-        await publishEvent(
-          'APPOINTMENT_CANCELLED',
-          shop.id,
-          { appointmentId: appId, phone, reason: 'Cancelado via WhatsApp' },
-          { appointmentId: appId }
-        ).catch(() => {});
-
-        reply = `✅ Seu agendamento foi cancelado com sucesso.\n\nEsperamos ver você em breve! Envie *MENU* quando desejar agendar um novo horário.`;
+        reply = `Confirma o cancelamento de *${targetApp?.service?.name || 'Serviço'}* em *${targetApp ? formatBrazilDate(targetApp.scheduledAt) + ' às ' + formatBrazilTime(targetApp.scheduledAt) : ''}*?\n\n1️⃣ *Sim, confirmar cancelamento*\n2️⃣ *Não, manter horário*\n0️⃣ *Voltar ao menu*`;
       } else {
-        reply = `Não foi possível identificar o agendamento para cancelar. Envie *MENU* para tentar novamente.`;
+        reply = `Opção inválida. Por favor, digite o número do agendamento que deseja cancelar (ou 0 para voltar):`;
       }
     } else {
-      reply = `Seu agendamento foi mantido normalmente! 👍\n\nEnvie *MENU* se precisar de mais alguma coisa.`;
+      const isConfirmCancel = numericOption === '1' ||
+        normalized === '1' ||
+        normalized.includes('sim') ||
+        normalized.includes('cancel');
+
+      if (isConfirmCancel) {
+        const appId = context.cancellingAppointmentId;
+        if (appId) {
+          await prisma.appointment.update({
+            where: { id: appId },
+            data: {
+              status: 'CANCELADO',
+              cancelReason: 'Cancelado pelo cliente via WhatsApp',
+              cancelledAt: new Date(),
+            },
+          });
+
+          await cancelAppointmentReminders(appId);
+
+          await publishEvent(
+            'APPOINTMENT_CANCELLED',
+            shop.id,
+            { appointmentId: appId, phone, reason: 'Cancelado via WhatsApp' },
+            { appointmentId: appId }
+          ).catch(() => {});
+
+          reply = `✅ Seu agendamento foi cancelado com sucesso.\n\nEsperamos ver você em breve! Envie *MENU* quando desejar agendar um novo horário.`;
+        } else {
+          reply = `Não foi possível identificar o agendamento para cancelar. Envie *MENU* para tentar novamente.`;
+        }
+      } else {
+        reply = `Seu agendamento foi mantido normalmente! 👍\n\nEnvie *MENU* se precisar de mais alguma coisa.`;
+      }
+      nextState = 'IDLE';
+      context = {};
     }
-    nextState = 'IDLE';
-    context = {};
   }
 
   // Save Session updates
