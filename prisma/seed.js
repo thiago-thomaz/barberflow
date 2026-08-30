@@ -89,15 +89,15 @@ async function main() {
     },
   });
 
-  // 7. Business Hours for Imperial
+  // 7. Business Hours for Imperial (07:00 - 23:00)
   const hours = [
-    { dayOfWeek: 0, openTime: '09:00', closeTime: '17:00', isOpen: false },
-    { dayOfWeek: 1, openTime: '09:00', closeTime: '20:00', isOpen: true },
-    { dayOfWeek: 2, openTime: '09:00', closeTime: '20:00', isOpen: true },
-    { dayOfWeek: 3, openTime: '09:00', closeTime: '20:00', isOpen: true },
-    { dayOfWeek: 4, openTime: '09:00', closeTime: '20:00', isOpen: true },
-    { dayOfWeek: 5, openTime: '09:00', closeTime: '21:00', isOpen: true },
-    { dayOfWeek: 6, openTime: '08:30', closeTime: '19:30', isOpen: true },
+    { dayOfWeek: 0, openTime: '07:00', closeTime: '23:00', isOpen: true },
+    { dayOfWeek: 1, openTime: '07:00', closeTime: '23:00', isOpen: true },
+    { dayOfWeek: 2, openTime: '07:00', closeTime: '23:00', isOpen: true },
+    { dayOfWeek: 3, openTime: '07:00', closeTime: '23:00', isOpen: true },
+    { dayOfWeek: 4, openTime: '07:00', closeTime: '23:00', isOpen: true },
+    { dayOfWeek: 5, openTime: '07:00', closeTime: '23:00', isOpen: true },
+    { dayOfWeek: 6, openTime: '07:00', closeTime: '23:00', isOpen: true },
   ];
   for (const h of hours) {
     await prisma.businessHours.create({

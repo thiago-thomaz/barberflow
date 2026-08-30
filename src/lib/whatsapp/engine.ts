@@ -286,6 +286,158 @@ export async function buildDateSelectionPrompt(
   return { text, quickDateMap };
 }
 
+/**
+ * Builds prompt for Period Selection (Manhã / Tarde / Noite)
+ */
+export function buildPeriodSelectionPrompt(dateStr: string, customHeader?: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const targetDate = new Date(year, month - 1, day);
+  const weekdayNamesPt = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+  const dayName = weekdayNamesPt[targetDate.getDay()];
+  const formattedDate = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+
+  const header = customHeader || `Para qual período do dia você prefere ver os horários em *${dayName} (${formattedDate})*?`;
+  return `${header}\n\n1️⃣ 🌅 *Manhã* (07:00 às 12:00)\n2️⃣ ☀️ *Tarde* (12:00 às 18:00)\n3️⃣ 🌙 *Noite* (18:00 às 23:00)\n0️⃣ 🔙 *Escolher outra data*\n\n_Digite o número da opção (1, 2 ou 3):_`;
+}
+
+export interface PeriodTimeSlots {
+  text: string;
+  quickSlotMap: Record<string, string>;
+  availableSlots: string[];
+  occupiedSlots: string[];
+}
+
+/**
+ * Builds formatted time slots for a selected period (Manhã, Tarde ou Noite)
+ * Lists slots at 30-min intervals between 07:00 and 23:00, indicating Libre or Ocupado.
+ */
+export async function buildPeriodSlotsPrompt(params: {
+  shopId: string;
+  dateStr: string;
+  period: 'MANHA' | 'TARDE' | 'NOITE';
+  barberId?: string;
+  durationMin?: number;
+}): Promise<PeriodTimeSlots> {
+  const { shopId, dateStr, period, barberId, durationMin = 30 } = params;
+
+  const now = new Date();
+  const brazilDateStr = now.toLocaleDateString('en-CA', { timeZone: BRAZIL_TIMEZONE });
+  const isToday = brazilDateStr === dateStr;
+
+  const brazilTimeStr = now.toLocaleTimeString('pt-BR', { timeZone: BRAZIL_TIMEZONE, hour12: false });
+  const [bHour, bMin] = brazilTimeStr.split(':').map(Number);
+  const currentMinutes = bHour * 60 + bMin;
+
+  const periodConfig = {
+    MANHA: {
+      label: '🌅 Manhã (07:00 às 12:00)',
+      slots: ['07:00', '07:30', '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00'],
+    },
+    TARDE: {
+      label: '☀️ Tarde (12:00 às 18:00)',
+      slots: ['12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'],
+    },
+    NOITE: {
+      label: '🌙 Noite (18:00 às 23:00)',
+      slots: ['18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00', '21:30', '22:00', '22:30', '23:00'],
+    },
+  };
+
+  const selectedPeriod = periodConfig[period] || periodConfig.MANHA;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const targetDate = new Date(year, month - 1, day);
+  const weekdayNamesPt = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+  const dayName = weekdayNamesPt[targetDate.getDay()];
+  const formattedDate = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+
+  const shop = await prisma.barbershop.findUnique({
+    where: { id: shopId },
+    include: {
+      barbers: { where: { isActive: true, deletedAt: null } },
+      businessHours: true,
+    },
+  });
+
+  const barbers = shop?.barbers || [];
+  const dayOfWeek = targetDate.getDay();
+  const businessHour = shop?.businessHours.find((h) => h.dayOfWeek === dayOfWeek);
+
+  const [openH, openM] = (businessHour?.openTime || '07:00').split(':').map(Number);
+  const [closeH, closeM] = (businessHour?.closeTime || '23:00').split(':').map(Number);
+  const shopOpenMinutes = openH * 60 + openM;
+  const shopCloseMinutes = closeH * 60 + closeM;
+
+  const startOfDay = new Date(`${dateStr}T00:00:00-03:00`);
+  const endOfDay = new Date(`${dateStr}T23:59:59.999-03:00`);
+
+  const existingApps = await prisma.appointment.findMany({
+    where: {
+      barbershopId: shopId,
+      status: { notIn: ['CANCELADO', 'NO_SHOW'] },
+      scheduledAt: { gte: startOfDay, lte: endOfDay },
+    },
+  });
+
+  const quickSlotMap: Record<string, string> = {};
+  const availableSlots: string[] = [];
+  const occupiedSlots: string[] = [];
+
+  let slotLines = '';
+  let optionIdx = 1;
+
+  for (const slotTime of selectedPeriod.slots) {
+    const [sH, sM] = slotTime.split(':').map(Number);
+    const slotMin = sH * 60 + sM;
+    const slotStart = new Date(`${dateStr}T${slotTime}:00-03:00`);
+    const slotEnd = new Date(slotStart.getTime() + durationMin * 60 * 1000);
+
+    const isWithinShopHours = slotMin >= shopOpenMinutes && slotMin + durationMin <= shopCloseMinutes;
+    const isPastTime = isToday && slotMin <= currentMinutes + 15;
+
+    let isFree = false;
+
+    if (isWithinShopHours && !isPastTime) {
+      if (barberId && barberId !== 'ANY') {
+        const conflict = existingApps.some(
+          (a) => a.barberId === barberId && a.scheduledAt < slotEnd && a.endAt > slotStart
+        );
+        if (!conflict) isFree = true;
+      } else {
+        for (const b of barbers) {
+          const conflict = existingApps.some(
+            (a) => a.barberId === b.id && a.scheduledAt < slotEnd && a.endAt > slotStart
+          );
+          if (!conflict) {
+            isFree = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (isFree) {
+      const optStr = String(optionIdx);
+      quickSlotMap[optStr] = slotTime;
+      availableSlots.push(slotTime);
+      slotLines += `${formatOptionNumber(optionIdx)} *${slotTime}* — 🟢 Livre\n`;
+      optionIdx++;
+    } else {
+      occupiedSlots.push(slotTime);
+      slotLines += `❌ ~${slotTime}~ — 🔴 Ocupado\n`;
+    }
+  }
+
+  let text = `Horários para *${dayName} (${formattedDate})* — ${selectedPeriod.label}:\n\n${slotLines}\n0️⃣ *Trocar período (Manhã / Tarde / Noite)*\n\n`;
+
+  if (availableSlots.length > 0) {
+    text += `_Digite o número da opção (ex: 1) ou digite o horário desejado (ex: ${availableSlots[0]}):_`;
+  } else {
+    text += `_Todos os horários deste período estão ocupados. Envie 0 para escolher outro período ou dia._`;
+  }
+
+  return { text, quickSlotMap, availableSlots, occupiedSlots };
+}
+
 // In-memory cache for recent providerMessageIds (prevents parallel webhook duplicate execution)
 const recentMessageIds = new Map<string, number>();
 
@@ -815,136 +967,193 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       } else {
         context.date = parsedDate;
 
-        // Fetch available slots from database
-        const [year, month, day] = parsedDate.split('-').map(Number);
-        const targetDate = new Date(year, month - 1, day);
-        const dayOfWeek = targetDate.getDay();
+        // Check if user specified period in the text (e.g. "amanha de manha")
+        let detectedPeriod: 'MANHA' | 'TARDE' | 'NOITE' | null = null;
+        if (normalized.includes('manha') || normalized.includes('matutin')) {
+          detectedPeriod = 'MANHA';
+        } else if (normalized.includes('tarde') || normalized.includes('vespertin')) {
+          detectedPeriod = 'TARDE';
+        } else if (normalized.includes('noite') || normalized.includes('noturn')) {
+          detectedPeriod = 'NOITE';
+        }
 
-        const businessHours = await prisma.businessHours.findUnique({
-          where: { barbershopId_dayOfWeek: { barbershopId: shop.id, dayOfWeek } },
-        });
-
-        const weekdayNames = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
-        const dayName = weekdayNames[dayOfWeek];
-
-        if (!businessHours || !businessHours.isOpen) {
-          const datePrompt = await buildDateSelectionPrompt(
-            shop.id,
-            `A barbearia não abre aos *${dayName.toLowerCase()}s* (${day}/${month}). Por favor, escolha um dia em que atendemos:`
-          );
-          context.quickDateMap = datePrompt.quickDateMap;
-          reply = datePrompt.text;
-        } else {
-          const [openH, openM] = businessHours.openTime.split(':').map(Number);
-          const [closeH, closeM] = businessHours.closeTime.split(':').map(Number);
-          const duration = context.durationMin || 30;
-
-          // Fetch existing appointments on that day
-          const startOfDay = new Date(`${parsedDate}T00:00:00-03:00`);
-          const endOfDay = new Date(`${parsedDate}T23:59:59.999-03:00`);
-
-          const existingApps = await prisma.appointment.findMany({
-            where: {
-              barbershopId: shop.id,
-              status: { notIn: ['CANCELADO', 'NO_SHOW'] },
-              scheduledAt: { gte: startOfDay, lte: endOfDay },
-            },
+        if (detectedPeriod) {
+          context.period = detectedPeriod;
+          const slotsPrompt = await buildPeriodSlotsPrompt({
+            shopId: shop.id,
+            dateStr: parsedDate,
+            period: detectedPeriod,
+            barberId: context.barberId,
+            durationMin: context.durationMin || 30,
           });
-
-          // Compute open slots
-          const availableSlots: string[] = [];
-          let currentMinutes = openH * 60 + openM;
-          const closeMinutes = closeH * 60 + closeM;
-
-          while (currentMinutes + duration <= closeMinutes) {
-            const h = Math.floor(currentMinutes / 60);
-            const m = currentMinutes % 60;
-            const slotTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-            const slotStart = new Date(`${parsedDate}T${slotTime}:00-03:00`);
-            const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
-
-            if (slotStart > now) {
-              // Check barber conflict
-              let hasFreeBarber = false;
-              if (context.barberId && context.barberId !== 'ANY') {
-                const conflict = existingApps.some(
-                  (a) => a.barberId === context.barberId && a.scheduledAt < slotEnd && a.endAt > slotStart
-                );
-                if (!conflict) hasFreeBarber = true;
-              } else {
-                // Any barber
-                for (const b of shop.barbers) {
-                  const conflict = existingApps.some(
-                    (a) => a.barberId === b.id && a.scheduledAt < slotEnd && a.endAt > slotStart
-                  );
-                  if (!conflict) {
-                    hasFreeBarber = true;
-                    break;
-                  }
-                }
-              }
-
-              if (hasFreeBarber) availableSlots.push(slotTime);
-            }
-
-            currentMinutes += 30;
-          }
-
-          if (availableSlots.length === 0) {
-            const datePrompt = await buildDateSelectionPrompt(
-              shop.id,
-              `Não encontramos horários disponíveis para o dia *${day}/${month}*. 😕\nPor favor, escolha outra data:`
-            );
-            context.quickDateMap = datePrompt.quickDateMap;
-            reply = datePrompt.text;
-          } else {
-            context.availableSlots = availableSlots.slice(0, 10); // Show top 10
-            nextState = 'SELECTING_TIME';
-
-            const slotList = context.availableSlots
-              .map((t: string, i: number) => `${formatOptionNumber(i + 1)} *${t}*`)
-              .join('\n');
-
-            reply = `Horários disponíveis para *${parsedDate}*:\n\n${slotList}\n0️⃣ *Escolher outra data*\n\n_Digite o número do horário desejado ou 0 para voltar:_`;
-          }
+          context.quickSlotMap = slotsPrompt.quickSlotMap;
+          context.availableSlots = slotsPrompt.availableSlots;
+          context.occupiedSlots = slotsPrompt.occupiedSlots;
+          nextState = 'SELECTING_TIME';
+          reply = slotsPrompt.text;
+        } else {
+          nextState = 'SELECTING_PERIOD';
+          reply = buildPeriodSelectionPrompt(parsedDate);
         }
       }
     }
   }
 
   // -------------------------------------------------------------
-  // STATE: SELECTING_TIME
+  // STATE: SELECTING_PERIOD (1º Filtro: Manhã, Tarde ou Noite)
   // -------------------------------------------------------------
-  else if (session.state === 'SELECTING_TIME') {
-    if (numericOption === '0' || normalized === '0' || normalized === 'voltar') {
+  else if (session.state === 'SELECTING_PERIOD') {
+    if (numericOption === '0' || normalized === '0' || normalized === 'voltar' || normalized.includes('data') || normalized.includes('dia')) {
       nextState = 'SELECTING_DATE';
       const datePrompt = await buildDateSelectionPrompt(shop.id);
       context.quickDateMap = datePrompt.quickDateMap;
       reply = datePrompt.text;
     } else {
-      const slotIdx = numericOption ? parseInt(numericOption, 10) - 1 : parseInt(cleanText, 10) - 1;
-      let chosenTime: string | null = null;
+      let selectedPeriod: 'MANHA' | 'TARDE' | 'NOITE' | null = null;
 
-      if (!isNaN(slotIdx) && context.availableSlots && context.availableSlots[slotIdx]) {
-        chosenTime = context.availableSlots[slotIdx];
+      if (numericOption === '1' || normalized === '1' || normalized.includes('manha') || normalized.includes('matutin')) {
+        selectedPeriod = 'MANHA';
+      } else if (numericOption === '2' || normalized === '2' || normalized.includes('tarde') || normalized.includes('vespertin')) {
+        selectedPeriod = 'TARDE';
+      } else if (numericOption === '3' || normalized === '3' || normalized.includes('noite') || normalized.includes('noturn')) {
+        selectedPeriod = 'NOITE';
+      }
+
+      // Check if user directly typed a time format (e.g. 09:30, 15h, 20:00)
+      const directMatch = cleanText.match(/^(\d{1,2})(?:[:h](\d{2})|h)?$/i);
+      if (!selectedPeriod && directMatch) {
+        const h = parseInt(directMatch[1], 10);
+        if (h >= 7 && h < 12) selectedPeriod = 'MANHA';
+        else if (h >= 12 && h < 18) selectedPeriod = 'TARDE';
+        else if (h >= 18 && h <= 23) selectedPeriod = 'NOITE';
+      }
+
+      if (!selectedPeriod) {
+        reply = `Por favor, escolha uma opção válida de período:\n\n1️⃣ 🌅 *Manhã* (07:00 às 12:00)\n2️⃣ ☀️ *Tarde* (12:00 às 18:00)\n3️⃣ 🌙 *Noite* (18:00 às 23:00)\n0️⃣ 🔙 *Escolher outra data*\n\n_Envie 1 para Manhã, 2 para Tarde ou 3 para Noite:_`;
       } else {
-        // Direct HH:MM or HHhMM match
-        const directMatch = cleanText.match(/^(\d{1,2})[:h](\d{2})?$/i);
+        context.period = selectedPeriod;
+        const slotsPrompt = await buildPeriodSlotsPrompt({
+          shopId: shop.id,
+          dateStr: context.date,
+          period: selectedPeriod,
+          barberId: context.barberId,
+          durationMin: context.durationMin || 30,
+        });
+
+        context.quickSlotMap = slotsPrompt.quickSlotMap;
+        context.availableSlots = slotsPrompt.availableSlots;
+        context.occupiedSlots = slotsPrompt.occupiedSlots;
+
+        // If user directly provided a valid available time
         if (directMatch) {
           const h = directMatch[1].padStart(2, '0');
           const m = directMatch[2] ? directMatch[2] : '00';
           const formatted = `${h}:${m}`;
-          if (context.availableSlots?.includes(formatted)) {
+          if (slotsPrompt.availableSlots.includes(formatted)) {
+            context.time = formatted;
+            const existingCustomer = await prisma.customer.findFirst({
+              where: {
+                barbershopId: shop.id,
+                deletedAt: null,
+                OR: [
+                  { phone: { contains: phoneLast8 } },
+                  { whatsappPhone: phone },
+                  { whatsappPhone: { contains: phoneLast8 } },
+                ],
+              },
+            });
+
+            if (!existingCustomer && !context.customerName) {
+              nextState = 'ASKING_NEW_CUSTOMER_NAME';
+              reply = `É seu primeiro agendamento na *${shop.name}*! 😊\n\nPor favor, informe seu *Nome Completo* para confirmarmos:\n0️⃣ *Cancelar*`;
+            } else {
+              context.customerName = existingCustomer?.name || context.customerName || incoming.senderName || 'Cliente';
+              nextState = 'WAITING_CONFIRMATION';
+              reply = `✂️ *Confirme seu Horário:*\n\n💈 *Barbearia:* ${shop.name}\n👤 *Cliente:* ${context.customerName}\n✂️ *Serviço:* ${context.serviceName}\n👤 *Barbeiro:* ${context.barberName}\n📅 *Data:* ${context.date}\n🕐 *Horário:* ${context.time}\n💰 *Valor:* R$ ${Number(context.price).toFixed(2).replace('.', ',')}\n\nConfirmar agendamento?\n1️⃣ *Sim, confirmar agora*\n2️⃣ *Não, cancelar agendamento*\n0️⃣ *Voltar ao menu principal*`;
+            }
+
+            await prisma.whatsappSession.update({
+              where: { id: session.id },
+              data: {
+                state: nextState,
+                context: JSON.stringify(context),
+                expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000),
+              },
+            });
+
+            if (reply) {
+              await getWhatsAppProvider().sendText({
+                to: phone,
+                text: reply,
+                tenantId: shop.id,
+              });
+            }
+
+            return { reply, state: nextState };
+          }
+        }
+
+        nextState = 'SELECTING_TIME';
+        reply = slotsPrompt.text;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // STATE: SELECTING_TIME (Lista horários de 30min com Livre / Ocupado)
+  // -------------------------------------------------------------
+  else if (session.state === 'SELECTING_TIME') {
+    if (numericOption === '0' || normalized === '0' || normalized === 'voltar' || normalized.includes('periodo') || normalized.includes('trocar')) {
+      nextState = 'SELECTING_PERIOD';
+      reply = buildPeriodSelectionPrompt(context.date);
+    } else {
+      let chosenTime: string | null = null;
+      let requestedOccupiedTime: string | null = null;
+
+      // 1. Match por número de opção livre (ex: 1, 2, 3...)
+      if (numericOption && context.quickSlotMap && context.quickSlotMap[numericOption]) {
+        chosenTime = context.quickSlotMap[numericOption];
+      } else {
+        // 2. Direct HH:MM ou HHhMM match (ex: 08:30, 8:30, 8h30, 8h, 14h)
+        const directMatch = cleanText.match(/^(\d{1,2})(?:[:h](\d{2})|h)?$/i);
+        if (directMatch) {
+          const h = directMatch[1].padStart(2, '0');
+          const m = directMatch[2] ? directMatch[2] : '00';
+          const formatted = `${h}:${m}`;
+          if (context.availableSlots && context.availableSlots.includes(formatted)) {
             chosenTime = formatted;
+          } else if (context.occupiedSlots && context.occupiedSlots.includes(formatted)) {
+            requestedOccupiedTime = formatted;
           }
         }
       }
 
-      if (!chosenTime) {
-        const slotList = context.availableSlots
-          ? context.availableSlots.map((t: string, i: number) => `${formatOptionNumber(i + 1)} *${t}*`).join('\n')
-          : '';
-        reply = `Por favor, escolha um dos horários válidos:\n\n${slotList}\n0️⃣ *Escolher outra data*\n\n_Digite o número do horário (ex: 1 ou ${context.availableSlots?.[0] || '09:00'}):_`;
+      if (requestedOccupiedTime) {
+        const slotsPrompt = await buildPeriodSlotsPrompt({
+          shopId: shop.id,
+          dateStr: context.date,
+          period: context.period || 'MANHA',
+          barberId: context.barberId,
+          durationMin: context.durationMin || 30,
+        });
+        context.quickSlotMap = slotsPrompt.quickSlotMap;
+        context.availableSlots = slotsPrompt.availableSlots;
+        context.occupiedSlots = slotsPrompt.occupiedSlots;
+
+        reply = `⚠️ O horário *${requestedOccupiedTime}* já está ocupado. 😕\n\nPor favor, escolha um dos horários com 🟢 *Livre* abaixo:\n\n${slotsPrompt.text}`;
+      } else if (!chosenTime) {
+        const slotsPrompt = await buildPeriodSlotsPrompt({
+          shopId: shop.id,
+          dateStr: context.date,
+          period: context.period || 'MANHA',
+          barberId: context.barberId,
+          durationMin: context.durationMin || 30,
+        });
+        context.quickSlotMap = slotsPrompt.quickSlotMap;
+        context.availableSlots = slotsPrompt.availableSlots;
+        context.occupiedSlots = slotsPrompt.occupiedSlots;
+
+        reply = `Por favor, escolha uma opção válida de horário livre:\n\n${slotsPrompt.text}`;
       } else {
         context.time = chosenTime;
 
@@ -956,6 +1165,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
             OR: [
               { phone: { contains: phoneLast8 } },
               { whatsappPhone: phone },
+              { whatsappPhone: { contains: phoneLast8 } },
             ],
           },
         });
