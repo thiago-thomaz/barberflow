@@ -1,6 +1,6 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from '../prisma';
 import { getWhatsAppProvider } from './provider';
-import { formatBrazilDate, formatBrazilTime } from '@/lib/timezone';
+import { formatBrazilDate, formatBrazilTime } from '../timezone';
 
 export interface ScheduleRemindersInput {
   appointmentId: string;

@@ -132,8 +132,8 @@ export default function FinanceiroPage() {
 
   return (
     <AppShell
-      title="Gestão Financeira"
-      subtitle="Controle de receitas, ticket médio, comissões por barbeiro e métodos de pagamento"
+      title="Faturamento & Vendas"
+      subtitle="Controle de faturamento, ticket médio, comissões por barbeiro e métodos de pagamento"
     >
       <div className="space-y-6">
         {/* Period Filter Bar */}

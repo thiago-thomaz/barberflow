@@ -2,9 +2,11 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 
 export interface BadgeProps {
-  status: string;
+  status?: string;
+  variant?: 'success' | 'warning' | 'danger' | 'info' | 'neutral';
   className?: string;
   size?: 'sm' | 'md' | 'lg';
+  children?: React.ReactNode;
 }
 
 const statusConfig: Record<string, { label: string; bg: string; text: string; dot: string }> = {
@@ -29,13 +31,30 @@ const statusConfig: Record<string, { label: string; bg: string; text: string; do
   BAIXA: { label: 'Recorrência Baixa', bg: 'bg-zinc-500/10 border-zinc-500/20', text: 'text-zinc-400', dot: 'bg-zinc-400' },
 };
 
-export function Badge({ status, className, size = 'md' }: BadgeProps) {
-  const config = statusConfig[status] || {
-    label: status,
-    bg: 'bg-zinc-800 border-zinc-700',
-    text: 'text-zinc-300',
-    dot: 'bg-zinc-400',
-  };
+const variantConfig: Record<string, { bg: string; text: string; dot: string }> = {
+  success: { bg: 'bg-emerald-500/10 border-emerald-500/20', text: 'text-emerald-400', dot: 'bg-emerald-400' },
+  warning: { bg: 'bg-amber-500/10 border-amber-500/20', text: 'text-amber-400', dot: 'bg-amber-400' },
+  danger: { bg: 'bg-rose-500/10 border-rose-500/20', text: 'text-rose-400', dot: 'bg-rose-400' },
+  info: { bg: 'bg-blue-500/10 border-blue-500/20', text: 'text-blue-400', dot: 'bg-blue-400' },
+  neutral: { bg: 'bg-zinc-800 border-zinc-700', text: 'text-zinc-300', dot: 'bg-zinc-400' },
+};
+
+export function Badge({ status, variant, className, size = 'md', children }: BadgeProps) {
+  let config = status ? statusConfig[status] : null;
+
+  if (!config && variant) {
+    const v = variantConfig[variant] || variantConfig.neutral;
+    config = { label: typeof children === 'string' ? children : '', ...v };
+  }
+
+  if (!config) {
+    config = {
+      label: status || '',
+      bg: 'bg-zinc-800 border-zinc-700',
+      text: 'text-zinc-300',
+      dot: 'bg-zinc-400',
+    };
+  }
 
   const sizeClasses = {
     sm: 'px-2 py-0.5 text-xs',
@@ -54,7 +73,7 @@ export function Badge({ status, className, size = 'md' }: BadgeProps) {
       )}
     >
       <span className={cn('w-1.5 h-1.5 rounded-full', config.dot)} />
-      {config.label}
+      {children || config.label}
     </span>
   );
 }

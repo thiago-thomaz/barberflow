@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from '../prisma';
 import { wahaClient, WahaClient } from './waha';
 
 export interface SendTextParams {
@@ -66,6 +66,13 @@ export class WahaWhatsAppProvider implements IWhatsAppProvider {
     });
 
     if (res.success) {
+      const rawMsgId = res.messageId as any;
+      const sanitizedMsgId = rawMsgId
+        ? (typeof rawMsgId === 'object'
+            ? (rawMsgId._serialized || rawMsgId.id || JSON.stringify(rawMsgId))
+            : String(rawMsgId))
+        : null;
+
       await prisma.whatsappMessage.create({
         data: {
           barbershopId: params.tenantId,
@@ -75,12 +82,12 @@ export class WahaWhatsAppProvider implements IWhatsAppProvider {
           type: params.type || 'TEXT',
           content: params.text,
           status: 'SENT',
-          providerMessageId: res.messageId || null,
+          providerMessageId: sanitizedMsgId,
           appointmentId: params.appointmentId || null,
         },
       }).catch((err) => console.warn('[WAHA] DB log error:', err));
 
-      return { success: true, messageId: res.messageId, status: 'SENT' };
+      return { success: true, messageId: sanitizedMsgId, status: 'SENT' };
     }
 
     return { success: false, error: res.error };

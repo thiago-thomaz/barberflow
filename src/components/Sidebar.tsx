@@ -11,6 +11,7 @@ import {
   Scissors,
   UserCheck,
   DollarSign,
+  Landmark,
   Zap,
   Settings,
   LogOut,
@@ -35,7 +36,8 @@ export function Sidebar({ barbershopName, slug }: { barbershopName?: string; slu
     },
     { href: '/servicos', label: 'Serviços', icon: Scissors },
     { href: '/barbeiros', label: 'Barbeiros', icon: UserCheck },
-    { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
+    { href: '/financeiro', label: 'Faturamento', icon: DollarSign },
+    { href: '/gestao-financeira', label: 'Gestão Financeira', icon: Landmark },
     { href: '/automacoes', label: 'Automações & n8n', icon: Zap },
     { href: '/configuracoes', label: 'Configurações', icon: Settings },
   ];

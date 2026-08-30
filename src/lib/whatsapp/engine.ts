@@ -1,9 +1,9 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from '../prisma';
 import { getWhatsAppProvider } from './provider';
 import { scheduleAppointmentReminders, cancelAppointmentReminders } from './reminders';
-import { generateGoogleCalendarUrl } from '@/lib/calendar';
-import { BRAZIL_TIMEZONE, formatBrazilDate, formatBrazilTime } from '@/lib/timezone';
-import { publishEvent } from '@/lib/events';
+import { generateGoogleCalendarUrl } from '../calendar';
+import { BRAZIL_TIMEZONE, formatBrazilDate, formatBrazilTime } from '../timezone';
+import { publishEvent } from '../events';
 
 export const SESSION_TTL_MINUTES = 30;
 

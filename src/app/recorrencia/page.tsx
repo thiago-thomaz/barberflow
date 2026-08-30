@@ -39,21 +39,21 @@ export default function RecorrenciaPage() {
   const fetchAllRecurrenceData = async () => {
     try {
       setLoading(true);
-      const [metRes, riskRes, dueRes, inactRes] = await Promise.all([
-        fetch('/api/recurrence'),
+      const [recovRes, riskRes, dueRes, inactRes] = await Promise.all([
+        fetch('/api/recurrence/recovery'),
         fetch('/api/recurrence/at-risk'),
         fetch('/api/recurrence/due-for-return'),
         fetch('/api/recurrence/inactive'),
       ]);
 
-      const [metData, riskData, dueData, inactData] = await Promise.all([
-        metRes.json(),
+      const [recovData, riskData, dueData, inactData] = await Promise.all([
+        recovRes.json(),
         riskRes.json(),
         dueRes.json(),
         inactRes.json(),
       ]);
 
-      if (metRes.ok) setMetrics(metData.metrics);
+      if (recovRes.ok) setMetrics(recovData.metrics);
       if (riskRes.ok) setAtRiskList(riskData.customers || []);
       if (dueRes.ok) setDueList(dueData.customers || []);
       if (inactRes.ok) setInactiveList(inactData.customers || []);
@@ -126,16 +126,30 @@ export default function RecorrenciaPage() {
               </p>
             </div>
 
-            <div className="rounded-xl border border-amber-500/40 bg-zinc-900/90 p-5 text-right min-w-[220px]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-400 block">
-                Receita em Oportunidade
-              </span>
-              <span className="text-3xl sm:text-4xl font-extrabold text-emerald-400 block mt-1">
-                {formatCurrency(metrics?.totalOpportunity || 0)}
-              </span>
-              <span className="text-[11px] text-zinc-400 mt-1 block">
-                {metrics?.countAtRisk || 0} clientes em risco + {metrics?.countInactive || 0} inativos
-              </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="rounded-xl border border-amber-500/40 bg-zinc-900/90 p-4 text-right min-w-[190px]">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">
+                  Receita em Oportunidade
+                </span>
+                <span className="text-2xl sm:text-3xl font-extrabold text-emerald-400 block mt-0.5">
+                  {formatCurrency(metrics?.totalOpportunity || 0)}
+                </span>
+                <span className="text-[10px] text-zinc-400 mt-0.5 block">
+                  {metrics?.countAtRisk || 0} em risco + {metrics?.countInactive || 0} inativos
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-emerald-500/40 bg-zinc-900/90 p-4 text-right min-w-[190px]">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block">
+                  Receita Recuperada Real
+                </span>
+                <span className="text-2xl sm:text-3xl font-extrabold text-white block mt-0.5">
+                  {formatCurrency(metrics?.totalRecovered || 0)}
+                </span>
+                <span className="text-[10px] text-emerald-400/90 mt-0.5 block">
+                  Taxa de Recuperação: {metrics?.recoveryRate || 0}%
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -229,6 +243,7 @@ export default function RecorrenciaPage() {
                   <table className="w-full text-left text-xs text-zinc-300">
                     <thead className="border-b border-[#22262E] text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                       <tr>
+                        <th className="pb-3 px-3">Prioridade</th>
                         <th className="pb-3 px-3">Cliente</th>
                         <th className="pb-3 px-3">Última Visita</th>
                         <th className="pb-3 px-3">Ciclo Habitual</th>
@@ -238,42 +253,60 @@ export default function RecorrenciaPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#22262E]/60">
-                      {atRiskList.map((c) => (
-                        <tr key={c.id} className="hover:bg-[#1A1D23]/50 transition-colors">
-                          <td className="py-3 px-3 font-semibold text-white">
-                            <div>{c.name}</div>
-                            <div className="text-[11px] text-zinc-500 font-mono">
-                              {formatPhone(c.phone)}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3 text-zinc-300">
-                            {c.lastVisitDate ? formatDate(c.lastVisitDate) : '-'}
-                          </td>
-                          <td className="py-3 px-3 text-zinc-300">
-                            {c.cycleDays} dias
-                          </td>
-                          <td className="py-3 px-3">
-                            <span className="font-bold text-rose-400">
-                              {c.daysSinceLastVisit} dias
-                            </span>{' '}
-                            <span className="text-[10px] text-zinc-500">
-                              (+{c.daysOverdue} dias em atraso)
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 font-bold text-emerald-400">
-                            {formatCurrency(c.potentialRevenue)}
-                          </td>
-                          <td className="py-3 px-3 text-right">
-                            <button
-                              onClick={() => openWhatsAppModal(c)}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-3 py-1.5 text-xs font-bold text-emerald-400 hover:bg-emerald-500/25 transition-all shadow-sm"
-                            >
-                              <MessageSquare className="h-3.5 w-3.5" />
-                              <span>Reativar no WhatsApp</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {atRiskList.map((c) => {
+                        const prio = c.priority || (c.daysOverdue >= 10 ? 'ALTA' : c.daysOverdue >= 5 ? 'MEDIA' : 'BAIXA');
+                        return (
+                          <tr key={c.id} className="hover:bg-[#1A1D23]/50 transition-colors">
+                            <td className="py-3 px-3">
+                              {prio === 'ALTA' ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                  🔥 ALTA
+                                </span>
+                              ) : prio === 'MEDIA' ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  ⚡ MÉDIA
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                  BAIXA
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 font-semibold text-white">
+                              <div>{c.name}</div>
+                              <div className="text-[11px] text-zinc-500 font-mono">
+                                {formatPhone(c.phone)}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 text-zinc-300">
+                              {c.lastVisitDate ? formatDate(c.lastVisitDate) : '-'}
+                            </td>
+                            <td className="py-3 px-3 text-zinc-300">
+                              {c.cycleDays} dias
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className="font-bold text-rose-400">
+                                {c.daysSinceLastVisit} dias
+                              </span>{' '}
+                              <span className="text-[10px] text-zinc-500">
+                                (+{c.daysOverdue} dias em atraso)
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 font-bold text-emerald-400">
+                              {formatCurrency(c.potentialRevenue)}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <button
+                                onClick={() => openWhatsAppModal(c)}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-3 py-1.5 text-xs font-bold text-emerald-400 hover:bg-emerald-500/25 transition-all shadow-sm"
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                <span>Reativar no WhatsApp</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

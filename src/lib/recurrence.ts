@@ -14,6 +14,7 @@ export interface RecurrenceResult {
   estimatedNextVisit: Date | null;
   daysSinceLastVisit: number;
   daysOverdue: number;
+  priority?: 'ALTA' | 'MEDIA' | 'BAIXA';
   status: 'NOVO' | 'ATIVO' | 'EM_RISCO' | 'INATIVO' | 'VIP';
   recurrenceRate: 'ALTA' | 'MEDIA' | 'BAIXA';
   revenueOpportunity: number; // Potential recovery revenue
@@ -212,9 +213,63 @@ export async function calculateCustomerRecurrence(
   // Days overdue beyond standard expected cycle
   const daysOverdue = Math.max(0, daysSinceLastVisit - cycleDays);
 
+  // Deterministic Priority Ranking (ALTA, MEDIA, BAIXA)
+  let priority: 'ALTA' | 'MEDIA' | 'BAIXA' = 'MEDIA';
+  if (status === 'EM_RISCO') {
+    if (daysOverdue >= 15 || previousStatus === 'VIP' || avgTicket >= 60 || totalVisits >= 5) {
+      priority = 'ALTA';
+    } else if (daysOverdue >= 5) {
+      priority = 'MEDIA';
+    } else {
+      priority = 'BAIXA';
+    }
+  } else if (status === 'INATIVO') {
+    if (avgTicket >= 60 || totalVisits >= 6) {
+      priority = 'ALTA';
+    } else if (daysSinceLastVisit <= 90) {
+      priority = 'MEDIA';
+    } else {
+      priority = 'BAIXA';
+    }
+  } else {
+    priority = 'BAIXA';
+  }
+
   // Revenue opportunity calculation: estimated loss if at risk or inactive
   const revenueOpportunity =
     status === 'EM_RISCO' || status === 'INATIVO' ? (avgTicket > 0 ? avgTicket : 45) : 0;
+
+  // Track / Upsert Money on the Table Opportunity
+  if (revenueOpportunity > 0) {
+    const existingOpportunity = await prisma.moneyOnTheTableRecovery.findFirst({
+      where: {
+        barbershopId,
+        customerId,
+        status: 'PENDING',
+      },
+    });
+
+    if (!existingOpportunity) {
+      await prisma.moneyOnTheTableRecovery.create({
+        data: {
+          barbershopId,
+          customerId,
+          opportunityDetectedAt: new Date(),
+          opportunityAmount: revenueOpportunity,
+          priority,
+          status: 'PENDING',
+        },
+      });
+    } else {
+      await prisma.moneyOnTheTableRecovery.update({
+        where: { id: existingOpportunity.id },
+        data: {
+          opportunityAmount: revenueOpportunity,
+          priority,
+        },
+      });
+    }
+  }
 
   // Suggested personalized WhatsApp message
   let suggestedMessage = '';
@@ -239,6 +294,7 @@ export async function calculateCustomerRecurrence(
     estimatedNextVisit,
     daysSinceLastVisit,
     daysOverdue,
+    priority,
     status,
     recurrenceRate,
     revenueOpportunity,
@@ -333,5 +389,54 @@ export async function getRecurrenceDashboardMetrics(barbershopId: string) {
     totalCustomers: customers.length,
     avgTicketShop,
     retentionRate,
+  };
+}
+
+/**
+ * Gets full Money on the Table intelligence including recovery metrics & priorities
+ */
+export async function getMoneyOnTheTableFullMetrics(barbershopId: string) {
+  const baseMetrics = await getRecurrenceDashboardMetrics(barbershopId);
+
+  // Fetch all opportunities
+  const opportunities = await prisma.moneyOnTheTableRecovery.findMany({
+    where: { barbershopId },
+    include: {
+      customer: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          status: true,
+          stats: true,
+        },
+      },
+    },
+    orderBy: { opportunityDetectedAt: 'desc' },
+  });
+
+  const pendingOpportunities = opportunities.filter((o) => o.status === 'PENDING');
+  const recoveredOpportunities = opportunities.filter((o) => o.status === 'RECOVERED');
+
+  const countPriorityHigh = pendingOpportunities.filter((o) => o.priority === 'ALTA').length;
+  const countPriorityMedium = pendingOpportunities.filter((o) => o.priority === 'MEDIA').length;
+  const countPriorityLow = pendingOpportunities.filter((o) => o.priority === 'BAIXA').length;
+
+  const totalRecovered = recoveredOpportunities.reduce((acc, o) => acc + o.recoveredAmount, 0);
+  const totalTrackedPotential = opportunities.reduce((acc, o) => acc + o.opportunityAmount, 0);
+
+  const recoveryRate =
+    totalTrackedPotential > 0
+      ? Math.round((totalRecovered / totalTrackedPotential) * 100)
+      : 0;
+
+  return {
+    ...baseMetrics,
+    countPriorityHigh,
+    countPriorityMedium,
+    countPriorityLow,
+    totalRecovered,
+    recoveryRate,
+    recentRecoveries: recoveredOpportunities.slice(0, 5),
   };
 }
