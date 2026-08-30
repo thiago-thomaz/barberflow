@@ -7,8 +7,8 @@ async function main() {
   const scriptContent = `
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-prisma.barbershop.findMany().then(shops => {
-  console.log('VPS Shops:', JSON.stringify(shops.map(s => ({ id: s.id, name: s.name, slug: s.slug, phone: s.phone })), null, 2));
+prisma.user.findMany({ include: { barbershop: true } }).then(users => {
+  console.log('VPS Users:', JSON.stringify(users.map(u => ({ id: u.id, email: u.email, role: u.role, shop: u.barbershop?.name, slug: u.barbershop?.slug })), null, 2));
   process.exit(0);
 }).catch(err => {
   console.error(err);
