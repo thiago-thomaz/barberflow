@@ -27,6 +27,9 @@ model User {
 
   auditLogs          AuditLog[]
   passwordResetTokens PasswordResetToken[]
+  educationProgress   EducationProgress[]
+  educationFavorites  EducationFavorite[]
+  educationAiConsultations EducationAiConsultation[]
 
   @@index([barbershopId])
   @@index([email])
@@ -93,6 +96,9 @@ model Barbershop {
   cashRegisters        CashRegister[]
   financialRecurringRules FinancialRecurringRule[]
   moneyOnTheTableRecoveries MoneyOnTheTableRecovery[]
+  educationProgress         EducationProgress[]
+  educationFavorites        EducationFavorite[]
+  educationAiConsultations  EducationAiConsultation[]
 
   @@index([slug])
   @@index([isActive])
@@ -694,5 +700,62 @@ model MoneyOnTheTableRecovery {
   @@index([customerId])
   @@index([status])
   @@index([priority])
+}
+
+// ----------------------------------------------------
+// Academia BarberFlow (Educação, Conteúdos, Progresso, IA)
+// ----------------------------------------------------
+
+model EducationProgress {
+  id           String     @id @default(cuid())
+  userId       String
+  barbershopId String
+  contentId    String
+  isCompleted  Boolean    @default(true)
+  completedAt  DateTime   @default(now())
+
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contentId])
+  @@index([barbershopId])
+  @@index([userId])
+}
+
+model EducationFavorite {
+  id           String     @id @default(cuid())
+  userId       String
+  barbershopId String
+  contentId    String
+  createdAt    DateTime   @default(now())
+
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contentId])
+  @@index([barbershopId])
+  @@index([userId])
+}
+
+model EducationAiConsultation {
+  id                  String     @id @default(cuid())
+  userId              String
+  barbershopId        String
+  question            String
+  topic               String?
+  diagnosis           String?
+  recommendation      String?
+  actionPlanJson      String?
+  metric              String?
+  disclaimer          String?
+  responseTimeMs      Int?
+  modelUsed           String     @default("DETERMINISTIC_RULES_ENGINE")
+  createdAt           DateTime   @default(now())
+
+  barbershop          Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([barbershopId])
+  @@index([userId])
 }
 

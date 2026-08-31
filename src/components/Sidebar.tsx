@@ -12,6 +12,7 @@ import {
   UserCheck,
   DollarSign,
   Landmark,
+  GraduationCap,
   Zap,
   Settings,
   LogOut,
@@ -38,6 +39,12 @@ export function Sidebar({ barbershopName, slug }: { barbershopName?: string; slu
     { href: '/barbeiros', label: 'Barbeiros', icon: UserCheck },
     { href: '/financeiro', label: 'Faturamento', icon: DollarSign },
     { href: '/gestao-financeira', label: 'Gestão Financeira', icon: Landmark },
+    {
+      href: '/academia',
+      label: '🎓 Academia BarberFlow',
+      icon: GraduationCap,
+      badge: 'Novo',
+    },
     { href: '/automacoes', label: 'Automações & n8n', icon: Zap },
     { href: '/configuracoes', label: 'Configurações', icon: Settings },
   ];

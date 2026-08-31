@@ -113,8 +113,55 @@ export async function ensureDatabaseSchema() {
       )
     `).catch(() => {});
 
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "EducationProgress" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "barbershopId" TEXT NOT NULL,
+        "contentId" TEXT NOT NULL,
+        "isCompleted" BOOLEAN NOT NULL DEFAULT 1,
+        "completedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "EducationProgress_barbershopId_fkey" FOREIGN KEY ("barbershopId") REFERENCES "Barbershop" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "EducationProgress_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "EducationFavorite" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "barbershopId" TEXT NOT NULL,
+        "contentId" TEXT NOT NULL,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "EducationFavorite_barbershopId_fkey" FOREIGN KEY ("barbershopId") REFERENCES "Barbershop" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "EducationFavorite_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "EducationAiConsultation" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "barbershopId" TEXT NOT NULL,
+        "question" TEXT NOT NULL,
+        "topic" TEXT,
+        "diagnosis" TEXT,
+        "recommendation" TEXT,
+        "actionPlanJson" TEXT,
+        "metric" TEXT,
+        "disclaimer" TEXT,
+        "responseTimeMs" INTEGER,
+        "modelUsed" TEXT NOT NULL DEFAULT 'DETERMINISTIC_RULES_ENGINE',
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "EducationAiConsultation_barbershopId_fkey" FOREIGN KEY ("barbershopId") REFERENCES "Barbershop" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "EducationAiConsultation_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `).catch(() => {});
+
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "WhatsappSession_barbershopId_phone_key" ON "WhatsappSession"("barbershopId", "phone")`).catch(() => {});
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "AppointmentReminder_appointmentId_reminderType_key" ON "AppointmentReminder"("appointmentId", "reminderType")`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "EducationProgress_userId_contentId_key" ON "EducationProgress"("userId", "contentId")`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "EducationFavorite_userId_contentId_key" ON "EducationFavorite"("userId", "contentId")`).catch(() => {});
   } catch (err) {
     console.warn('[DB AutoSync] Warning during schema sync:', err);
   }
