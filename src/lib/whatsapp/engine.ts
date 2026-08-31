@@ -4,6 +4,7 @@ import { scheduleAppointmentReminders, cancelAppointmentReminders } from './remi
 import { generateGoogleCalendarUrl } from '../calendar';
 import { BRAZIL_TIMEZONE, formatBrazilDate, formatBrazilTime } from '../timezone';
 import { publishEvent } from '../events';
+import { createOrGetVisagismSession } from '../visagism/engine.ts';
 
 export const SESSION_TTL_MINUTES = 30;
 
@@ -676,7 +677,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     });
 
     const expiredNotice = isExpired ? '_(Seu atendimento anterior expirou)_\n\n' : '';
-    const welcome = `${expiredNotice}Olá! 👋 Sou o assistente virtual da *${shop.name}*.\n\nComo posso te ajudar hoje?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n0️⃣ *Encerrar atendimento*\n\n_Envie o número da opção ou digite o que deseja (ex: "Quero cortar cabelo")._`;
+    const welcome = `${expiredNotice}Olá! 👋 Sou o assistente virtual da *${shop.name}*.\n\nComo posso te ajudar hoje?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n6️⃣ *✂️ Mudar meu visual (Visagismo)*\n0️⃣ *Encerrar atendimento*\n\n_Envie o número da opção ou digite o que deseja (ex: "Quero cortar cabelo" ou "Mudar visual")._`;
 
     await getWhatsAppProvider().sendText({ to: phone, text: welcome, tenantId: shop.id });
     return { reply: welcome, state: 'IDLE' };
@@ -714,9 +715,9 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       normalized.includes('anul');
     const isOption4 = numericOption === '4' ||
       normalized.includes('remarc') ||
-      normalized.includes('mudar') ||
-      normalized.includes('trocar') ||
-      normalized.includes('alterar') ||
+      normalized.includes('mudar data') ||
+      normalized.includes('trocar data') ||
+      normalized.includes('alterar data') ||
       normalized.includes('reagend');
     const isOption5 = numericOption === '5' ||
       normalized.includes('falar') ||
@@ -726,11 +727,32 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       normalized.includes('contat') ||
       normalized.includes('telefon') ||
       normalized.includes('enderec');
+    const isOption6 = numericOption === '6' ||
+      normalized.includes('visagism') ||
+      normalized.includes('mudar visual') ||
+      normalized.includes('novo visual') ||
+      normalized.includes('mudar meu visual') ||
+      normalized.includes('mude meu visual') ||
+      normalized.includes('outro corte') ||
+      normalized.includes('experimentar corte') ||
+      normalized.includes('qual corte combina') ||
+      normalized.includes('qual corte') ||
+      normalized.includes('mudar cabelo') ||
+      normalized.includes('mudar barba') ||
+      normalized.includes('combinar comigo');
 
     if (isOption0) {
       reply = `Atendimento encerrado com sucesso! 😊\n\nQuando quiser agendar ou consultar horários na *${shop.name}*, basta enviar um *Oi* ou *MENU* a qualquer momento.\n\n💈 Agradecemos seu contato e até breve!`;
       nextState = 'IDLE';
       context = {};
+    } else if (isOption6) {
+      const visagismSession = await createOrGetVisagismSession({
+        barbershopId: shop.id,
+        phone,
+      });
+      const visagismUrl = `https://barber.projetosunion.cloud/visagismo/session/${visagismSession.publicToken}`;
+      reply = `Quer descobrir um novo visual? ✂️\n\nEnvie uma foto sua e veja sugestões de cortes, barbas, estilos e cores que combinam com você.\n\n🔗 *Acesse sua experiência de Visagismo:*\n${visagismUrl}\n\n_(Link seguro e válido por 24 horas. Sua foto é privada e você pode excluí-la quando quiser)._\n\nEnvie *MENU* para voltar ao menu principal.`;
+      nextState = 'IDLE';
     } else if (isOption1) {
       nextState = 'SELECTING_SERVICE';
       context = {};
@@ -828,7 +850,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     } else if (isOption5) {
       reply = `📞 Você pode falar diretamente com nossa equipe:\n\n💈 *${shop.name}*\n📱 Telefone / WhatsApp: ${shop.phone || 'Em breve'}\n📍 Endereço: ${shop.address || 'Consulte nosso balcão'}\n\nEnvie *MENU* para voltar ao atendimento automático ou *0* para encerrar.`;
     } else {
-      reply = `Não compreendi exatamente. 😊\n\nComo posso ajudar você na *${shop.name}*?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n0️⃣ *Encerrar atendimento*`;
+      reply = `Não compreendi exatamente. 😊\n\nComo posso ajudar você na *${shop.name}*?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n6️⃣ *✂️ Mudar meu visual (Visagismo)*\n0️⃣ *Encerrar atendimento*`;
     }
   }
 

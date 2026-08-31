@@ -38,3 +38,5 @@ dev.db
 dev.db-journal
 /backups/*.db
 /backups/*.sql.gz
+storage/
+uploads/

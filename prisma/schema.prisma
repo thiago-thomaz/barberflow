@@ -104,6 +104,8 @@ model Barbershop {
   academyDiagnostics        AcademyDiagnostic[]
   academyActionPlans        AcademyActionPlan[]
   academyDiagnosticSnapshots AcademyDiagnosticSnapshot[]
+  visagismSessions          VisagismSession[]
+  visagismMetrics           VisagismMetric[]
 
   @@index([slug])
   @@index([isActive])
@@ -196,6 +198,7 @@ model Customer {
   whatsappMessages WhatsappMessage[]
   financialTransactions FinancialTransaction[]
   moneyOnTheTableRecoveries MoneyOnTheTableRecovery[]
+  visagismSessions          VisagismSession[]
 
   @@index([barbershopId])
   @@index([phone])
@@ -831,6 +834,95 @@ model AcademyDiagnosticSnapshot {
   barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
 
   @@index([barbershopId])
+  @@index([createdAt])
+}
+
+// ----------------------------------------------------
+// Visagismo BarberFlow — Mude seu visual (Zero Custo IA / LGPD)
+// ----------------------------------------------------
+
+model VisagismSession {
+  id              String                  @id @default(cuid())
+  barbershopId    String
+  customerId      String?
+  publicToken     String                  @unique @default(cuid())
+  status          String                  @default("DRAFT") // DRAFT, PHOTO_UPLOADED, PROFILE_COMPLETED, COMPLETED, EXPIRED, DELETED
+  consentAt       DateTime?
+  photoStorageKey String?
+  photoMimeType   String?
+  photoSize       Int?
+  photoDeletedAt  DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  barbershop      Barbershop              @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  customer        Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  profile         VisagismProfile?
+  recommendations VisagismRecommendation[]
+  metrics         VisagismMetric[]
+
+  @@index([barbershopId])
+  @@index([publicToken])
+  @@index([customerId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model VisagismProfile {
+  id               String          @id @default(cuid())
+  sessionId        String          @unique
+  objective        String          // Corte, Barba, Corte + Barba, Cor, Estilo completo, Nao sei
+  style            String          // Classico, Moderno, Executivo, Casual, Despojado, Degrade, Longo, Curto, Marcante, Natural
+  changeLevel      String          // Pouco, Medio, Radical
+  maintenanceLevel String          // Pouco, Medio, Bastante
+  hairLength       String          // Sim, Nao, Tanto faz
+  faceShape        String          // Oval, Redondo, Quadrado, Retangular, Triangular, Coracao, Nao sei
+  colorPreference  String?         // Natural, Castanho, Castanho escuro, Castanho claro, Loiro, Platinado, Grisalho, Colorido
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  session          VisagismSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model VisagismRecommendation {
+  id                  String          @id @default(cuid())
+  sessionId           String
+  haircutName         String
+  haircutStyle        String
+  beardName           String?
+  hairColor           String?
+  maintenance         String
+  reasoning           String
+  barberTips          String?
+  serviceSuggestionId String?
+  referenceImageUrl   String?
+  score               Float           @default(80.0)
+  isSelected          Boolean         @default(false)
+  createdAt           DateTime        @default(now())
+
+  session             VisagismSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([isSelected])
+}
+
+model VisagismMetric {
+  id           String           @id @default(cuid())
+  barbershopId String
+  sessionId    String?
+  eventName    String           // visagism_started, photo_uploaded, consent_given, profile_completed, recommendation_generated, style_saved, appointment_clicked, appointment_created, whatsapp_shared
+  metadata     String?          // JSON payload
+  createdAt    DateTime         @default(now())
+
+  barbershop   Barbershop       @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  session      VisagismSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([barbershopId])
+  @@index([sessionId])
+  @@index([eventName])
   @@index([createdAt])
 }
 
