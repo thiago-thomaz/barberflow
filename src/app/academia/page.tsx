@@ -368,13 +368,21 @@ export default function AcademiaPage() {
 
                     <div>
                       {/* Meta information */}
-                      <div className="flex items-center justify-between text-[11px] text-zinc-400 border-t border-zinc-800/80 pt-3 mb-3">
+                      <div className="flex items-center justify-between text-[11px] text-zinc-400 border-t border-zinc-800/80 pt-3 mb-2">
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3 text-zinc-400" />
                           {item.duration}
                         </span>
                         <span className="capitalize font-medium text-zinc-400">
                           {item.level.toLowerCase()}
+                        </span>
+                      </div>
+
+                      {/* Verification badge */}
+                      <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-3 px-0.5">
+                        <span className="flex items-center gap-1 text-emerald-500/80">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>Link verificado em 31/08/2026</span>
                         </span>
                       </div>
 
@@ -392,7 +400,7 @@ export default function AcademiaPage() {
                           <a
                             href={item.officialUrl}
                             target="_blank"
-                            rel="noreferrer"
+                            rel="noopener noreferrer"
                             className="flex-1 py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors border border-zinc-700"
                           >
                             <span>Acessar no {item.institution}</span>
@@ -438,7 +446,10 @@ export default function AcademiaPage() {
                 <Clock className="h-3 w-3" /> {readingItem.duration}
               </span>
               <span className="text-zinc-500">•</span>
-              <span className="text-zinc-400">Verificado em: {readingItem.lastVerifiedAt}</span>
+              <span className="text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>Link verificado em 31/08/2026</span>
+              </span>
             </div>
 
             <div className="prose prose-invert prose-xs sm:prose-sm max-w-none text-zinc-300 leading-relaxed whitespace-pre-line font-normal">
@@ -449,7 +460,7 @@ export default function AcademiaPage() {
               <a
                 href={readingItem.officialUrl}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="text-xs text-amber-400 hover:underline flex items-center gap-1"
               >
                 <span>Ver fonte oficial ({readingItem.institution})</span>

@@ -1,35 +1,45 @@
-# Curadoria de Fontes Oficiais — Academia BarberFlow
+# Diretório Oficial de Fontes Educacionais — Academia BarberFlow
 
-## 1. Diretriz de Curadoria
-Todos os cursos e materiais recomendados na Academia BarberFlow atendem aos seguintes critérios:
-1. **100% Gratuitos:** Sem taxas de matrícula ou cobranças ocultas.
-2. **Fontes Governamentais e Instituições Reconhecidas:** Conteúdos com credibilidade no mercado brasileiro.
-3. **Sem Pirataria / Links Oficiais:** URLs diretas para os portais oficiais.
-4. **Verificação Periódica:** Data de checagem registrada em cada registro.
+Este documento relaciona as fontes institucionais, governamentais e acadêmicas oficiais homologadas para curadoria de conteúdos na Academia BarberFlow.
 
 ---
 
-## 2. Instituições Parceiras e Portais Recomendados
+## 1. Instituições Homologadas e Domínios Oficiais
 
 ### Sebrae (Serviço Brasileiro de Apoio às Micro e Pequenas Empresas)
-- **Portal de Cursos:** `https://www.sebrae.com.br/sites/PortalSebrae/cursosonline`
-- **Sebrae Play:** `https://sebraeplay.com.br`
-- **Cursos Chave:** Gestão Financeira, Fluxo de Caixa, Formação de Preço, Marketing Digital e Atendimento ao Cliente.
+- **Portal Principal:** `https://sebrae.com.br`
+- **Plataforma de Cursos Online:** `https://loja.sebrae.com.br`
+- **Canal Oficial no YouTube:** `https://www.youtube.com/@Sebrae`
+- **Áreas Temáticas:** Gestão Financeira, Fluxo de Caixa, Precificação, Marketing Digital, Gestão de Pessoas, Atendimento ao Cliente, MEI.
 
 ### Fundação Bradesco (Escola Virtual)
-- **Portal de Cursos:** `https://www.ev.org.br/cursos`
-- **Cursos Chave:** Administração Estratégica, Gestão do Tempo, Comunicação Empresarial, Matemática Financeira e Segurança da Informação.
+- **Portal Oficial:** `https://www.ev.org.br`
+- **Áreas Temáticas:** Educação Financeira, Contabilidade Empresarial, Atendimento ao Público, Comunicação Empresarial, Ferramentas Digitais e IA.
 
-### SENAI (Serviço Nacional de Aprendizagem Industrial)
-- **Portal EAD:** `https://www.portaldaindustria.com.br/senai/canais/educacao-profissional/cursos-a-distancia/`
-- **Cursos Chave:** Produtividade e Processos, Inovação Operacional.
+### Escola Virtual de Governo (ENAP / Governo Federal)
+- **Portal Oficial:** `https://www.escolavirtual.gov.br`
+- **Áreas Temáticas:** Gestão Pública e Estratégica, Direitos do Consumidor, Atendimento ao Cidadão, Inovação.
 
-### ENAP / EV.G (Escola Virtual de Governo)
-- **Portal:** `https://www.escolavirtual.gov.br`
-- **Cursos Chave:** Direitos do Consumidor, Gestão da Inovação.
+### SENAI Nacional (Serviço Nacional de Aprendizagem Industrial)
+- **Portal Oficial:** `https://www.portaldaindustria.com.br/senai`
+- **Canal Oficial no YouTube:** `https://www.youtube.com/@SENAInacional`
+- **Áreas Temáticas:** Produtividade Industrial e Comercial, Metodologia 5S, Processos Operacionais.
 
-### Governo Federal / Receita Federal / ANVISA
-- **Portal do Empreendedor (MEI):** `https://www.gov.br/empresas-e-negocios/pt-br/empreendedor`
-- **Emissor Nacional da NFS-e:** `https://www.gov.br/nfse/pt-br`
-- **Receita Federal (CNPJ):** `https://www.gov.br/receitafederal/pt-br`
-- **ANVISA (Normas Sanitárias):** `https://www.gov.br/anvisa/pt-br`
+### Governo Federal & Órgãos Oficiais (gov.br)
+- **Portal do Empreendedor:** `https://www.gov.br/empresas-e-negocios/pt-br/empreendedor`
+- **Receita Federal do Brasil:** `https://solucoes.receita.fazenda.gov.br`
+- **Emissor Nacional de NFS-e MEI:** `https://www.nfse.gov.br`
+- **Legislação Federal (Planalto):** `https://www.planalto.gov.br`
+  - *Lei do Salão Parceiro:* Lei Federal nº 13.352/2016
+  - *Código de Defesa do Consumidor:* Lei Federal nº 8.078/1990
+- **ANVISA (Agência Nacional de Vigilância Sanitária):** `https://www.gov.br/anvisa/pt-br`
+- **ANPD (Autoridade Nacional de Proteção de Dados):** `https://www.gov.br/anpd/pt-br`
+
+---
+
+## 2. Política de Curadoria & Conformidade
+
+1. **100% de Gratuidade:** Nenhum conteúdo direcionado exige taxa de matrícula ou cobrança oculta.
+2. **Links Diretos:** É terminantemente proibido o uso de páginas genéricas de categoria, agregadores terceiros ou encurtadores de URL.
+3. **Segurança:** Todos os links externos são abertos em nova aba com atributo `rel="noopener noreferrer"`.
+4. **Verificação Semântica Periódica:** As URLs são auditadas para garantir que o título do BarberFlow corresponde exatamente à página de destino.
