@@ -157,6 +157,17 @@ export async function saveVisagismPhoto(params: {
   // Escreve de forma síncrona/atômica
   fs.writeFileSync(filePath, fileBuffer);
 
+  // Executa análise visual com IA (Gemini Vision)
+  let visionAnalysis: { detectedFaceShape?: string; notes?: string } = {};
+  try {
+    const provider = getVisagismProvider();
+    if (provider.analyzePhoto) {
+      visionAnalysis = await provider.analyzePhoto(fileBuffer, mimeType);
+    }
+  } catch (err) {
+    console.warn('Falha silenciosa na análise Gemini Vision:', err);
+  }
+
   const updatedSession = await prisma.visagismSession.update({
     where: { id: sessionId },
     data: {
@@ -172,10 +183,15 @@ export async function saveVisagismPhoto(params: {
     barbershopId: updatedSession.barbershopId,
     sessionId,
     eventName: 'photo_uploaded',
-    metadata: { sizeBytes: fileBuffer.length, mimeType },
+    metadata: { sizeBytes: fileBuffer.length, mimeType, detectedShape: visionAnalysis.detectedFaceShape },
   });
 
-  return { success: true, fileName };
+  return {
+    success: true,
+    fileName,
+    detectedFaceShape: visionAnalysis.detectedFaceShape,
+    notes: visionAnalysis.notes,
+  };
 }
 
 /**

@@ -7,7 +7,8 @@ $vars = [
   'WAHA_URL' => 'https://evo.projetosunion.cloud',
   'WAHA_API_KEY' => 'bf_waha_sec_9e06180371424a1b80c355fb5dc21182',
   'WAHA_DEFAULT_SESSION' => 'default',
-  'WHATSAPP_PROVIDER' => 'WAHA'
+  'WHATSAPP_PROVIDER' => 'WAHA',
+  'GEMINI_API_KEY' => getenv('GEMINI_API_KEY') ?: '${process.env.GEMINI_API_KEY || ''}'
 ];
 
 foreach ($vars as $k => $v) {

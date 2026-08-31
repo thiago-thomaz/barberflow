@@ -110,7 +110,7 @@ export async function POST(
       return NextResponse.json({ error: 'Falha ao processar arquivo de imagem' }, { status: 400 });
     }
 
-    await saveVisagismPhoto({
+    const result = await saveVisagismPhoto({
       sessionId: session.id,
       fileBuffer,
       mimeType,
@@ -121,6 +121,8 @@ export async function POST(
       success: true,
       message: 'Foto recebida e protegida com sucesso',
       photoUrl: `/api/visagismo/session/${token}/photo`,
+      detectedFaceShape: result.detectedFaceShape,
+      notes: result.notes,
     });
   } catch (error: any) {
     console.error('Visagism photo upload error:', error);

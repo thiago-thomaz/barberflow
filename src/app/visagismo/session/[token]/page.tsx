@@ -50,6 +50,8 @@ export default function VisagismoSessionPage() {
   const [maintenanceLevel, setMaintenanceLevel] = useState<string>('Medio');
   const [hairLength, setHairLength] = useState<string>('Tanto faz');
   const [faceShape, setFaceShape] = useState<string>('Oval');
+  const [aiDetectedShape, setAiDetectedShape] = useState<string | null>(null);
+  const [aiNotes, setAiNotes] = useState<string | null>(null);
   const [colorPreference, setColorPreference] = useState<string>('Natural');
 
   // Face Shape Info Modal
@@ -149,6 +151,14 @@ export default function VisagismoSessionPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Erro no upload');
+
+        if (data.detectedFaceShape) {
+          setFaceShape(data.detectedFaceShape);
+          setAiDetectedShape(data.detectedFaceShape);
+        }
+        if (data.notes) {
+          setAiNotes(data.notes);
+        }
       } catch (err: any) {
         alert(err.message);
         setUploadingPhoto(false);
@@ -593,6 +603,15 @@ export default function VisagismoSessionPage() {
               <p className="text-xs text-zinc-400">
                 Selecione o formato que mais se aproxima do seu rosto.
               </p>
+              {aiDetectedShape && (
+                <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-amber-500/15 to-amber-400/5 border border-amber-500/30 text-left flex items-start gap-2.5">
+                  <Sparkles className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="text-[11px] text-zinc-300">
+                    <p className="font-bold text-amber-400">Identificado pelo Google Gemini Vision:</p>
+                    <p className="text-zinc-300">{aiNotes || `Seu formato predominante detectado foi ${aiDetectedShape}. Você pode confirmar ou alterar abaixo.`}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
