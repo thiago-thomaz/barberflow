@@ -30,6 +30,8 @@ model User {
   educationProgress   EducationProgress[]
   educationFavorites  EducationFavorite[]
   educationAiConsultations EducationAiConsultation[]
+  academyDiagnostics  AcademyDiagnostic[]
+  academyActionPlans  AcademyActionPlan[]
 
   @@index([barbershopId])
   @@index([email])
@@ -99,6 +101,9 @@ model Barbershop {
   educationProgress         EducationProgress[]
   educationFavorites        EducationFavorite[]
   educationAiConsultations  EducationAiConsultation[]
+  academyDiagnostics        AcademyDiagnostic[]
+  academyActionPlans        AcademyActionPlan[]
+  academyDiagnosticSnapshots AcademyDiagnosticSnapshot[]
 
   @@index([slug])
   @@index([isActive])
@@ -758,4 +763,75 @@ model EducationAiConsultation {
   @@index([barbershopId])
   @@index([userId])
 }
+
+model AcademyDiagnostic {
+  id                 String      @id @default(cuid())
+  barbershopId       String
+  userId             String
+  answersJson        String      // Respostas das 15 perguntas
+  realMetricsJson    String?     // Snapshot das métricas reais apuradas
+  healthScore        Int         // 0 a 100
+  healthCategory     String      // EXCELENTE, SAUDAVEL, ATENCAO, CRITICO, DADOS_INSUFICIENTES
+  prioritiesJson     String      // Até 3 prioridades diárias ("O que fazer hoje")
+  biggestProblem     String?     // Maior problema apontado
+  missingDataJson    String?     // Explicação quando faltam dados
+  status             String      @default("COMPLETED")
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  barbershop         Barbershop  @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionPlans        AcademyActionPlan[]
+
+  @@index([barbershopId])
+  @@index([userId])
+  @@index([healthCategory])
+}
+
+model AcademyActionPlan {
+  id                     String             @id @default(cuid())
+  barbershopId           String
+  userId                 String
+  diagnosticId           String?
+  title                  String
+  problem                String
+  whyItMatters           String
+  action                 String
+  howTo                  String
+  deadlineDays           Int                @default(7)
+  targetDeadline         DateTime?
+  indicator              String
+  recommendedCategory    String?
+  recommendedContentIds  String?            // IDs JSON de conteúdos da Academia
+  recommendedToolId      String?
+  recommendedChecklistId String?
+  status                 String             @default("PENDENTE") // PENDENTE, EM_ANDAMENTO, CONCLUIDO
+  completedAt            DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  barbershop             Barbershop         @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  diagnostic             AcademyDiagnostic? @relation(fields: [diagnosticId], references: [id], onDelete: SetNull)
+
+  @@index([barbershopId])
+  @@index([userId])
+  @@index([status])
+  @@index([diagnosticId])
+}
+
+model AcademyDiagnosticSnapshot {
+  id           String     @id @default(cuid())
+  barbershopId String
+  score        Int
+  category     String
+  metricsJson  String
+  createdAt    DateTime   @default(now())
+
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+
+  @@index([barbershopId])
+  @@index([createdAt])
+}
+
 

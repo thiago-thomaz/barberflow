@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { Modal } from '@/components/UI/Modal';
-import { Badge } from '@/components/UI/Badge';
 import {
   GraduationCap,
   Sparkles,
@@ -29,14 +28,22 @@ import {
   Users,
   Briefcase,
   Megaphone,
+  Activity,
+  CheckSquare,
+  HelpCircle,
 } from 'lucide-react';
 import { EducationContentItem } from '@/lib/academia/content';
+import { DiagnosticResult, DailyPriority } from '@/lib/academia/diagnostic-engine';
 
 export default function AcademiaPage() {
   const [contents, setContents] = useState<EducationContentItem[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Diagnostic State
+  const [diagnostic, setDiagnostic] = useState<DiagnosticResult | null>(null);
+  const [actionPlanCount, setActionPlanCount] = useState({ total: 0, pending: 0 });
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<string>('TODOS');
@@ -56,12 +63,31 @@ export default function AcademiaPage() {
       if (selectedLevel && selectedLevel !== 'TODOS') params.set('level', selectedLevel);
       if (favoritesOnly) params.set('favorites', 'true');
 
-      const res = await fetch(`/api/academia/contents?${params.toString()}`);
+      const [res, diagRes, planRes] = await Promise.all([
+        fetch(`/api/academia/contents?${params.toString()}`),
+        fetch('/api/academia/diagnostic'),
+        fetch('/api/academia/action-plan'),
+      ]);
+
       if (res.ok) {
         const data = await res.json();
         setContents(data.contents || []);
         setCategories(data.categories || []);
         setStats(data.stats || null);
+      }
+
+      if (diagRes.ok) {
+        const dData = await diagRes.json();
+        if (dData.diagnostic) {
+          setDiagnostic(dData.diagnostic);
+        }
+      }
+
+      if (planRes.ok) {
+        const pData = await planRes.json();
+        if (pData.stats) {
+          setActionPlanCount({ total: pData.stats.total, pending: pData.stats.pending });
+        }
       }
     } catch (err) {
       console.error('Error fetching contents:', err);
@@ -85,7 +111,7 @@ export default function AcademiaPage() {
 
     // Optimistic UI update
     setContents((prev) =>
-      prev.map((c) => (c.id === item.id ? { ...c, isCompleted: newStatus } as any : c))
+      prev.map((c) => (c.id === item.id ? ({ ...c, isCompleted: newStatus } as any) : c))
     );
 
     if (readingItem && readingItem.id === item.id) {
@@ -98,7 +124,6 @@ export default function AcademiaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contentId: item.id, isCompleted: newStatus }),
       });
-      // Refresh stats in background
       const statsRes = await fetch('/api/academia/contents');
       if (statsRes.ok) {
         const d = await statsRes.json();
@@ -114,7 +139,7 @@ export default function AcademiaPage() {
     const newStatus = !(item as any).isFavorite;
 
     setContents((prev) =>
-      prev.map((c) => (c.id === item.id ? { ...c, isFavorite: newStatus } as any : c))
+      prev.map((c) => (c.id === item.id ? ({ ...c, isFavorite: newStatus } as any) : c))
     );
 
     try {
@@ -128,101 +153,280 @@ export default function AcademiaPage() {
     }
   };
 
+  const getScoreColor = (category?: string) => {
+    switch (category) {
+      case 'EXCELENTE':
+        return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+      case 'SAUDAVEL':
+        return 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30';
+      case 'ATENCAO':
+        return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+      case 'CRITICO':
+        return 'text-rose-400 bg-rose-500/10 border-rose-500/30';
+      default:
+        return 'text-zinc-400 bg-zinc-800 border-zinc-700';
+    }
+  };
+
   return (
     <AppShell
       title="🎓 Academia BarberFlow"
-      subtitle="Educação, Conteúdo Estratégico, Ferramentas de Gestão e Consultor IA para sua Barbearia"
+      subtitle="Consultoria Estratégica, Diagnóstico Inteligente, Ferramentas e Cursos Oficiais para sua Barbearia"
+      actions={
+        <div className="flex items-center gap-2">
+          <Link
+            href="/academia/diagnostico"
+            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/20"
+          >
+            <Activity className="h-3.5 w-3.5" />
+            <span>Meu Diagnóstico</span>
+          </Link>
+          <Link
+            href="/academia/plano"
+            className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-zinc-700"
+          >
+            <CheckSquare className="h-3.5 w-3.5" />
+            <span>Plano de Ação ({actionPlanCount.pending})</span>
+          </Link>
+        </div>
+      }
     >
       <div className="space-y-6">
-        {/* Top Quick Action Banners */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Comece Aqui Card / Progress */}
-          <div className="md:col-span-1 rounded-2xl bg-gradient-to-br from-amber-500/20 via-zinc-900 to-zinc-950 border border-amber-500/30 p-5 shadow-xl flex flex-col justify-between">
+        {/* Banner: "Como está sua barbearia hoje?" */}
+        <div className="rounded-3xl bg-gradient-to-r from-amber-500/15 via-[#151922] to-zinc-950 border border-amber-500/30 p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <span className="text-xs uppercase font-bold tracking-wider text-amber-400 flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5" /> Consultor de Gestão da Barbearia
+            </span>
+            <h2 className="text-xl md:text-2xl font-black text-white">
+              Como está sua barbearia hoje?
+            </h2>
+            <p className="text-xs md:text-sm text-zinc-300 max-w-2xl leading-relaxed">
+              O BarberFlow analisa sua ocupação, clientes inativos, ticket médio e contas para orientar suas prioridades diárias sem custo de IA.
+            </p>
+          </div>
+          <div className="flex items-center gap-2.5 w-full md:w-auto">
+            <Link
+              href="/academia/diagnostico"
+              className="w-full md:w-auto px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20 whitespace-nowrap"
+            >
+              <span>Ver Meu Diagnóstico</span>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+
+        {/* 4 Pillars Overview Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 1. Saúde da Barbearia */}
+          <Link
+            href="/academia/diagnostico"
+            className="group rounded-2xl bg-[#14171F] border border-zinc-800 hover:border-amber-500/40 p-5 shadow-lg flex flex-col justify-between transition-all hover:bg-zinc-900/80"
+          >
             <div>
               <div className="flex items-center justify-between mb-3">
-                <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
-                  <Compass className="h-4 w-4" /> Trilha Inicial
+                <span className="text-xs uppercase font-bold text-zinc-400 flex items-center gap-1.5">
+                  <Activity className="h-4 w-4 text-amber-400" /> Saúde do Negócio
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
-                  {stats?.comeceAquiPercent || 0}% Concluído
-                </span>
+                {diagnostic?.healthCategory && (
+                  <span
+                    className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${getScoreColor(
+                      diagnostic.healthCategory
+                    )}`}
+                  >
+                    {diagnostic.healthCategory}
+                  </span>
+                )}
               </div>
-              <h3 className="text-lg font-bold text-white mb-1">Primeiros Passos da Barbearia</h3>
-              <p className="text-xs text-zinc-300 leading-relaxed mb-4">
-                10 módulos rápidos com os fundamentos essenciais de faturamento, precificação, equipe e retenção.
+              <div className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-3xl font-black text-white">
+                  {diagnostic?.healthScore ?? 0}
+                </span>
+                <span className="text-sm text-zinc-500 font-semibold">/100</span>
+              </div>
+              <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                {diagnostic?.healthCategory === 'EXCELENTE' && 'Sua barbearia está com ótimos índices de faturamento e retenção.'}
+                {diagnostic?.healthCategory === 'SAUDAVEL' && 'Operação equilibrada. Há oportunidades para elevar o ticket médio.'}
+                {diagnostic?.healthCategory === 'ATENCAO' && 'Atenção necessária em ocupação de dias úteis e clientes inativos.'}
+                {diagnostic?.healthCategory === 'CRITICO' && 'Gargalos financeiros e de retenção identificados.'}
+                {(!diagnostic || diagnostic.healthCategory === 'DADOS_INSUFICIENTES') &&
+                  'Responda as 15 perguntas para apurar o score completo.'}
               </p>
             </div>
-
-            <div>
-              <div className="w-full bg-zinc-800 rounded-full h-2.5 mb-3 overflow-hidden">
-                <div
-                  className="bg-amber-500 h-2.5 rounded-full transition-all duration-500"
-                  style={{ width: `${stats?.comeceAquiPercent || 0}%` }}
-                />
-              </div>
-              <button
-                onClick={() => setSelectedCategory('COMECE_AQUI')}
-                className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20"
-              >
-                <span>Acessar Trilha Comece Aqui</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
+            <div className="mt-4 flex items-center text-xs font-semibold text-amber-400 gap-1 group-hover:translate-x-1 transition-transform">
+              <span>Abrir Diagnóstico</span>
+              <ArrowRight className="h-3.5 w-3.5" />
             </div>
-          </div>
+          </Link>
 
-          {/* Ferramentas Práticas Banner */}
+          {/* 2. Plano de Ação */}
+          <Link
+            href="/academia/plano"
+            className="group rounded-2xl bg-[#14171F] border border-zinc-800 hover:border-cyan-500/40 p-5 shadow-lg flex flex-col justify-between transition-all hover:bg-zinc-900/80"
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs uppercase font-bold text-zinc-400 flex items-center gap-1.5">
+                  <CheckSquare className="h-4 w-4 text-cyan-400" /> Plano de Ação
+                </span>
+                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                  {actionPlanCount.pending} Pendentes
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-3xl font-black text-white">{actionPlanCount.total}</span>
+                <span className="text-sm text-zinc-500 font-semibold">tarefas</span>
+              </div>
+              <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                Ações práticas com passo a passo, prazos e metas para aumentar a receita da sua barbearia.
+              </p>
+            </div>
+            <div className="mt-4 flex items-center text-xs font-semibold text-cyan-400 gap-1 group-hover:translate-x-1 transition-transform">
+              <span>Ver Plano Estruturado</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </div>
+          </Link>
+
+          {/* 3. Ferramentas & Calculadoras */}
           <Link
             href="/academia/ferramentas"
             className="group rounded-2xl bg-[#14171F] border border-zinc-800 hover:border-emerald-500/40 p-5 shadow-lg flex flex-col justify-between transition-all hover:bg-zinc-900/80"
           >
             <div>
               <div className="flex items-center justify-between mb-3">
-                <div className="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                  <Wrench className="h-4 w-4" />
-                </div>
+                <span className="text-xs uppercase font-bold text-zinc-400 flex items-center gap-1.5">
+                  <Wrench className="h-4 w-4 text-emerald-400" /> Ferramentas
+                </span>
                 <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                  12 Calculadoras + 8 Geradores
+                  12 Calculadoras
                 </span>
               </div>
-              <h3 className="text-base font-bold text-white group-hover:text-emerald-400 transition-colors mb-1">
-                🛠️ Ferramentas & Calculadoras
-              </h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Calculadora de preço de venda, ponto de equilíbrio, geradores de posts no Instagram, mensagens de WhatsApp e 9 checklists operacionais.
+              <div className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-3xl font-black text-white">29</span>
+                <span className="text-sm text-zinc-500 font-semibold">utilitários</span>
+              </div>
+              <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                Preço de venda, ponto de equilíbrio, geradores de WhatsApp e checklists operacionais.
               </p>
             </div>
             <div className="mt-4 flex items-center text-xs font-semibold text-emerald-400 gap-1 group-hover:translate-x-1 transition-transform">
-              <span>Abrir Central de Ferramentas</span>
+              <span>Central de Ferramentas</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </div>
           </Link>
 
-          {/* Assistente IA Consultivo */}
+          {/* 4. Consultor BarberFlow */}
           <Link
             href="/academia/ia"
             className="group rounded-2xl bg-[#14171F] border border-zinc-800 hover:border-amber-500/40 p-5 shadow-lg flex flex-col justify-between transition-all hover:bg-zinc-900/80"
           >
             <div>
               <div className="flex items-center justify-between mb-3">
-                <div className="h-9 w-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
-                  <Bot className="h-4 w-4" />
-                </div>
+                <span className="text-xs uppercase font-bold text-zinc-400 flex items-center gap-1.5">
+                  <Bot className="h-4 w-4 text-amber-400" /> Consultor BarberFlow
+                </span>
                 <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                  Consultor Especialista
+                  Sem Custo IA
                 </span>
               </div>
-              <h3 className="text-base font-bold text-white group-hover:text-amber-400 transition-colors mb-1">
-                🤖 Consultor BarberFlow
-              </h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Diagnósticos fundamentados, planos de ação para lotar horários vazios, elevar ticket médio e analisar os números da sua barbearia.
+              <div className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-2xl font-black text-white">Pergunte</span>
+              </div>
+              <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                Tire dúvidas sobre horários vazios, comissão ideal de equipe, MEI e estratégias de faturamento.
               </p>
             </div>
             <div className="mt-4 flex items-center text-xs font-semibold text-amber-400 gap-1 group-hover:translate-x-1 transition-transform">
-              <span>Fazer Consulta com o Consultor</span>
+              <span>Fazer Consulta Rápida</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </div>
           </Link>
+        </div>
+
+        {/* Widget: "🎯 O que fazer hoje" */}
+        {diagnostic?.priorities && diagnostic.priorities.length > 0 && (
+          <div className="rounded-3xl bg-[#12151B] border border-zinc-800 p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>🎯 O que fazer hoje</span>
+                </h3>
+                <p className="text-xs text-zinc-400">
+                  Prioridades imediatas calculadas com base nos dados da sua operação
+                </p>
+              </div>
+              <Link
+                href="/academia/plano"
+                className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1"
+              >
+                <span>Ver Todas as Ações</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+              {diagnostic.priorities.slice(0, 3).map((prio) => (
+                <div
+                  key={prio.id}
+                  className="rounded-2xl bg-zinc-900/90 border border-zinc-800 p-4 flex flex-col justify-between space-y-3 hover:border-zinc-700 transition-colors"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-amber-400">{prio.rank}º Prioridade</span>
+                      <span
+                        className={`text-[9px] uppercase font-extrabold px-2 py-0.5 rounded border ${
+                          prio.badge === 'URGENTE'
+                            ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        }`}
+                      >
+                        {prio.badge}
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-white mb-1">{prio.title}</h4>
+                    <p className="text-xs text-zinc-400 leading-relaxed">{prio.description}</p>
+                  </div>
+
+                  <Link
+                    href={prio.actionUrl}
+                    className="w-full py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors border border-zinc-700/60"
+                  >
+                    <span>{prio.actionLabel}</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Trilha Comece Aqui Progress Banner */}
+        <div className="rounded-2xl bg-gradient-to-br from-amber-500/20 via-zinc-900 to-zinc-950 border border-amber-500/30 p-5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="space-y-1">
+            <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
+              <Compass className="h-4 w-4" /> Trilha Inicial: Primeiros Passos
+            </span>
+            <h3 className="text-base font-bold text-white">
+              10 Módulos Essenciais de Gestão de Barbearia
+            </h3>
+            <p className="text-xs text-zinc-300 max-w-xl">
+              Domine os fundamentos de precificação, atração de clientes, comissões e rotinas de caixa.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="text-right hidden sm:block">
+              <span className="text-xs text-zinc-400 block font-medium">Seu Progresso</span>
+              <span className="text-sm font-black text-amber-400">{stats?.comeceAquiPercent || 0}%</span>
+            </div>
+            <button
+              onClick={() => setSelectedCategory('COMECE_AQUI')}
+              className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20 whitespace-nowrap"
+            >
+              <span>Acessar Módulos</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
         {/* Search & Filter Bar */}
@@ -291,11 +495,12 @@ export default function AcademiaPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <span className="text-xs text-zinc-400 font-medium">
-              Exibindo <strong className="text-white">{contents.length}</strong> conteúdos encontrados
+              Exibindo <strong className="text-white">{contents.length}</strong> conteúdos oficiais gratuitos
             </span>
             {stats && (
               <span className="text-xs text-zinc-400">
-                Você concluiu <strong className="text-amber-400">{stats.completedCount}</strong> de {stats.totalContents} itens ({stats.progressPercent}%)
+                Você concluiu <strong className="text-amber-400">{stats.completedCount}</strong> de{' '}
+                {stats.totalContents} itens ({stats.progressPercent}%)
               </span>
             )}
           </div>
@@ -316,8 +521,6 @@ export default function AcademiaPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {contents.map((item: any) => {
                 const isArticle = item.format === 'ARTIGO' || item.format === 'TRILHA';
-                const isCourse = item.format === 'CURSO';
-                const isVideo = item.format === 'VIDEO';
 
                 return (
                   <div

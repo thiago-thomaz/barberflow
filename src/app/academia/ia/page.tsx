@@ -31,14 +31,15 @@ export default function AcademiaIaPage() {
   const [currentConsultation, setCurrentConsultation] = useState<ConsultationResponse | null>(null);
   const [history, setHistory] = useState<any[]>([]);
 
-  // Suggested Quick Questions
+  // Suggested Quick Questions (Fase 9 / 16)
   const quickQuestions = [
-    'Como preencher horários vazios de terça e quarta-feira?',
-    'Como calcular o preço do corte para ter 30% de lucro real?',
-    'Qual o percentual ideal de comissão para barbeiro parceiro sem quebrar a loja?',
-    'O que fazer com clientes que não cortam há mais de 35 dias?',
-    'Como dominar o Google Maps gratuito para atrair clientes do bairro?',
-    'Quais são os limites e regras do MEI para donos de barbearia?',
+    'Como aumentar meu faturamento?',
+    'Estou cobrando pouco?',
+    'Tenho clientes suficientes?',
+    'Como reduzir horários vazios?',
+    'Como melhorar minha recorrência?',
+    'Minha situação financeira está saudável?',
+    'Como aumentar meu ticket?',
   ];
 
   // Fetch tenant metrics summary and consultation history
@@ -113,11 +114,16 @@ export default function AcademiaIaPage() {
             <span>Voltar à Academia</span>
           </Link>
           <Link
-            href="/academia/ferramentas"
-            className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center gap-1.5 transition-all border border-emerald-500/20"
+            href="/academia/diagnostico"
+            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/20"
           >
-            <Wrench className="h-3.5 w-3.5" />
-            <span>12 Calculadoras</span>
+            <span>Meu Diagnóstico</span>
+          </Link>
+          <Link
+            href="/academia/plano"
+            className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-zinc-700/60"
+          >
+            <span>Plano de Ação</span>
           </Link>
         </div>
       }

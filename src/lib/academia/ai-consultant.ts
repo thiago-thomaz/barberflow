@@ -1,7 +1,7 @@
 /**
  * BarberFlow — Academia BarberFlow AI Consultant Engine
  * Motor Consultivo Especializado em Barbearias
- * Zero Custos de API / 100% Determinístico & Estruturado / Fallback Silencioso
+ * Zero Custos de API / 100% Determinístico & Estruturado / Multi-Tenant Context
  */
 
 export interface TenantMetricsSnapshot {
@@ -9,8 +9,12 @@ export interface TenantMetricsSnapshot {
   avgTicket?: number;
   monthlyAppointments?: number;
   inactiveClientsCount?: number;
+  activeClientsCount?: number;
   barbersCount?: number;
   occupancyRate?: number;
+  monthlyExpenses?: number;
+  upcomingPayables7d?: number;
+  upcomingReceivables7d?: number;
 }
 
 export interface ConsultationResponse {
@@ -64,25 +68,75 @@ export async function consultBarberFlowAi(
     }
   }
 
-  // 2. Deterministic Rules Engine (Camada 1 & 2 & 3)
+  // 2. Deterministic Rules Engine (Camada 1, 2 e 3)
   const response = generateDeterministicAdvice(q, metrics);
   response.responseTimeMs = Date.now() - startTime;
   return response;
 }
 
 function generateDeterministicAdvice(q: string, metrics?: TenantMetricsSnapshot): ConsultationResponse {
-  // Topic: Horários Vazios / Ocupação / Dias Fracos
-  if (q.includes('vazi') || q.includes('terça') || q.includes('quarta') || q.includes('dia fraco') || q.includes('movimento fraco') || q.includes('ocupação') || q.includes('agenda vazia')) {
-    const occText = metrics?.occupancyRate ? `Sua taxa de ocupação atual estimada é de ${metrics.occupancyRate.toFixed(1)}%.` : 'Horários ociosos entre terça e quinta-feira representam a maior perda invisível de lucro em barbearias.';
+  // Quick Question 1: "Estou cobrando pouco?" / Precificação / Preço
+  if (q.includes('cobrando pouco') || q.includes('preço baixo') || q.includes('quanto cobrar') || q.includes('precificação') || q.includes('aumentar preço')) {
+    const ticketVal = metrics?.avgTicket || 45;
+    const ticketComment = metrics?.avgTicket
+      ? `Seu ticket médio recente apurado é de R$ ${metrics.avgTicket.toFixed(2)}.`
+      : 'O preço do corte em barbearias de bairro varia entre R$ 35 e R$ 60, enquanto espaços estruturados cobram acima de R$ 65.';
+
+    return {
+      topic: 'Diagnóstico de Preço & Margem de Venda',
+      problem: 'Insegurança sobre o valor cobrado e risco de trabalhar no prejuízo por não cobrir os custos de cadeira.',
+      diagnosis: `${ticketComment} Se o seu custo fixo por hora for de R$ 25 e a comissão for de 50%, cobrar R$ 35 por um corte de 30 minutos deixa uma margem líquida inferior a R$ 5,00 para a barbearia.`,
+      recommendation: 'Use a Calculadora de Preço de Venda da Academia para apurar seus custos fixos por minuto e reajuste o valor agregando valor na experiência antes do aumento.',
+      actionPlan: [
+        { step: 1, title: 'Calcular Custo Exato do Minuto', detail: 'Acesse a Calculadora de Preço de Venda nas Ferramentas da Academia e insira seus custos de aluguel, insumos e comissão.' },
+        { step: 2, title: 'Padronizar a Finalização', detail: 'Inclua toalha quente e massagem rápida no ombro para justificar uma percepção de valor superior.' },
+        { step: 3, title: 'Aviso Prévio Acolhedor', detail: 'Comunique seus clientes com 15 dias de antecedência explicando os investimentos em conforto do espaço.' },
+      ],
+      metric: 'Meta: Garantir margem líquida mínima de 25% para a barbearia após o pagamento de comissões e custos fixos.',
+      modelUsed: 'DETERMINISTIC_RULES_ENGINE',
+      responseTimeMs: 0,
+    };
+  }
+
+  // Quick Question 2: "Tenho clientes suficientes?" / Clientes / Base de Clientes
+  if (q.includes('clientes suficientes') || q.includes('tamanho da base') || q.includes('quantos clientes')) {
+    const active = metrics?.activeClientsCount || 0;
+    const inactive = metrics?.inactiveClientsCount || 0;
+    const barbers = metrics?.barbersCount || 1;
+    const totalNeeded = barbers * 150; // ~150 clientes recorrentes por barbeiro para agenda cheia
+
+    const baseText = active > 0
+      ? `Você possui atualmente ${active} clientes ativos e ${inactive} clientes sem retorno no BarberFlow.`
+      : `Para manter ${barbers} barbeiro(s) com agenda cheia (cortando a cada 20 a 25 dias), você precisa de uma base ativa de aproximadamente ${totalNeeded} clientes recorrentes.`;
+
+    return {
+      topic: 'Dimensionamento da Base de Clientes',
+      problem: 'Dúvida se a quantidade atual de clientes cadastrados sustenta a meta de faturamento e ocupação.',
+      diagnosis: `${baseText} O segredo não é apenas trazer novos clientes todos os dias, mas sim blindar a retenção dos clientes já atendidos.`,
+      recommendation: 'Trabalhe o agendamento do próximo retorno na própria cadeira antes do cliente pagar no balcão e ative a reativação automática.',
+      actionPlan: [
+        { step: 1, title: 'Calcular Churn e Retenção', detail: 'Utilize a Calculadora de Retenção & Churn na aba Ferramentas para medir a taxa mensal de perda.' },
+        { step: 2, title: 'Implantar Reagendamento Imediato', detail: 'Instrua a recepção a perguntar: "Já deixamos pré-agendado seu retorno daqui a 20 dias para garantir o mesmo horário?"' },
+        { step: 3, title: 'Recuperar Clientes em Risco', detail: 'Acesse o módulo de Recorrência e dispare mensagens para quem está há mais de 30 dias sem agendar.' },
+      ],
+      metric: `Meta: Manter pelo menos ${totalNeeded} clientes ativos cortando a cada 21 dias por cadeira.`,
+      modelUsed: 'DETERMINISTIC_RULES_ENGINE',
+      responseTimeMs: 0,
+    };
+  }
+
+  // Quick Question 3: "Como reduzir horários vazios?" / Horários Vazios / Terça e Quarta / Ocupação
+  if (q.includes('reduzir horários vazios') || q.includes('vazi') || q.includes('terça') || q.includes('quarta') || q.includes('dia fraco') || q.includes('movimento fraco') || q.includes('ocupação') || q.includes('agenda vazia')) {
+    const occText = metrics?.occupancyRate ? `Sua taxa de ocupação estimada atual é de ${metrics.occupancyRate.toFixed(1)}%.` : 'A ociosidade de terça e quarta-feira é o maior ralo financeiro de uma barbearia.';
     return {
       topic: 'Otimização de Horários Vazios & Ocupação',
       problem: 'Ociosidade de cadeiras e horários vagos no início e meio da semana (Terça a Quinta).',
-      diagnosis: `O padrão do público masculino é concentrar os cortes na sexta e sábado. ${occText} Descontos diretos no corte avulso desvalorizam o serviço, enquanto combos de alto valor agregado preenchem a agenda mantendo o ticket médio elevado.`,
-      recommendation: 'Crie a campanha "Terça & Quarta do Barbaço" oferecendo Corte + Barboterapia com toalha quente + Sobrancelha por um valor fechado imperdível apenas nesses dias.',
+      diagnosis: `O público masculino concentra naturalmente os atendimentos na sexta e sábado. ${occText} Oferecer desconto direto no corte avulso desvaloriza a marca. O caminho correto é criar combos exclusivos com serviços de alta margem (ex: Barboterapia ou Sobrancelha).`,
+      recommendation: 'Crie a campanha "Terça & Quarta do Barbaço" com o serviço Combo Master (Corte + Barba + Sobrancelha) válido exclusivamente nesses dias.',
       actionPlan: [
         { step: 1, title: 'Criar o Combo na Tabela de Serviços', detail: 'Cadastre o serviço "Combo Master Meio de Semana" no BarberFlow com duração de 45 minutos.' },
-        { step: 2, title: 'Disparo de WhatsApp no Domingo à Noite', detail: 'Envie um aviso nos Stories e WhatsApp para clientes que costumam cortar a cada 20 dias convidando para o atendimento de terça ou quarta.' },
-        { step: 3, title: 'Incentivo à Equipe', detail: 'Ofereça um bônus simbólico (ex: R$ 5 a mais por combo realizado) ao barbeiro que atingir mais de 6 atendimentos nesses dias.' },
+        { step: 2, title: 'Disparo de WhatsApp no Domingo à Noite', detail: 'Envie um aviso nos Stories e WhatsApp para clientes que costumam cortar a cada 20 dias convidando para terça ou quarta.' },
+        { step: 3, title: 'Incentivo à Equipe', detail: 'Ofereça um bônus simbólico por combo realizado ao barbeiro que atingir mais de 6 atendimentos nesses dias.' },
       ],
       metric: 'Meta: Elevar a taxa de ocupação de terça e quarta para no mínimo 60%.',
       modelUsed: 'DETERMINISTIC_RULES_ENGINE',
@@ -90,95 +144,89 @@ function generateDeterministicAdvice(q: string, metrics?: TenantMetricsSnapshot)
     };
   }
 
-  // Topic: Precificação / Preço / Cobrar / Margem / Aumentar Preço
-  if (q.includes('preço') || q.includes('cobrar') || q.includes('precificação') || q.includes('aumentar preço') || q.includes('margem') || q.includes('quanto cobrar')) {
+  // Quick Question 4: "Como melhorar minha recorrência?" / Recorrência / Retorno / Frequência
+  if (q.includes('melhorar minha recorrência') || q.includes('recorrência') || q.includes('frequência') || q.includes('fazer clientes voltarem') || q.includes('voltar')) {
+    const countText = metrics?.inactiveClientsCount ? `Você possui cerca de ${metrics.inactiveClientsCount} clientes atrasados para retornar no BarberFlow.` : 'Reduzir o intervalo médio de retorno de 30 para 20 dias aumenta seu faturamento em 50% com a mesma base de clientes.';
     return {
-      topic: 'Estratégia de Precificação & Margem de Lucro',
-      problem: 'Incerteza sobre o valor correto a cobrar por corte/barba e medo de perder clientes com reajuste.',
-      diagnosis: 'Muitos donos precificam copiando concorrentes do bairro, sem considerar custos fixos individuais (aluguel, água, energia, comissões). Se seu custo fixo por atendimento for R$ 12 e a comissão for 50%, cobrar R$ 35 deixa margem líquida insuficiente.',
-      recommendation: 'Ajuste o preço com base no tempo de cadeira e agregue percepção de valor (toalha descartável premium, café de qualidade, agendamento pontual) antes de comunicar o reajuste.',
+      topic: 'Engenharia de Recorrência & Frequência',
+      problem: 'Clientes demoram muito tempo para agendar o próximo corte, espaçando as visitas.',
+      diagnosis: `${countText} A maioria dos homens não corta o cabelo porque esquece de agendar na correria do dia a dia, e não por insatisfação.`,
+      recommendation: 'Monitore o painel de Recorrência semanalmente e automatize lembretes de renovação de visual.',
       actionPlan: [
-        { step: 1, title: 'Calcular o Custo da Cadeira', detail: 'Use a Calculadora de Preço de Venda na aba Ferramentas da Academia para apurar seu custo exato por minuto.' },
-        { step: 2, title: 'Melhorar a Experiência no Balcão', detail: 'Padronize a recepção e a finalização com produtos premium antes de aplicar o novo preço.' },
-        { step: 3, title: 'Aviso Prévio Acolhedor', detail: 'Comunique seus clientes com 15 dias de antecedência explicando os investimentos em melhorias e conforto do espaço.' },
+        { step: 1, title: 'Filtrar Clientes em Risco na Recorrência', detail: 'Abra a aba Recorrência no BarberFlow e veja a lista de oportunidades categorizadas.' },
+        { step: 2, title: 'Usar Gerador de Mensagens', detail: 'Gere um texto amigável na aba Ferramentas da Academia sem tom de cobrança agressiva.' },
+        { step: 3, title: 'Criar Programa de Assinatura/Clube', detail: 'Avalie criar um Clube do Corte com pagamento mensal fixo para garantir receita recorrente previsível.' },
       ],
-      metric: 'Meta: Garantir margem líquida da barbearia de pelo menos 25% sobre cada serviço realizado.',
+      metric: 'Meta: Reduzir o ciclo médio de retorno dos clientes fiéis para 20 dias.',
       modelUsed: 'DETERMINISTIC_RULES_ENGINE',
       responseTimeMs: 0,
     };
   }
 
-  // Topic: Clientes Inativos / Churn / Retenção / Reativação / Sumiram
-  if (q.includes('inativo') || q.includes('sumir') || q.includes('reativar') || q.includes('retorno') || q.includes('perder cliente') || q.includes('fidelizar') || q.includes('recorrência')) {
-    const countText = metrics?.inactiveClientsCount ? `Você possui atualmente cerca de ${metrics.inactiveClientsCount} clientes em risco de abandono no BarberFlow.` : 'Clientes que ultrapassam 35 dias sem cortar o cabelo têm 65% mais chance de migrar para outro concorrente.';
+  // Quick Question 5: "Minha situação financeira está saudável?" / Saúde Financeira / Caixa / Lucro
+  if (q.includes('financeira está saudável') || q.includes('situação financeira') || q.includes('saúde financeira') || q.includes('dinheiro no caixa') || q.includes('fluxo de caixa')) {
+    const payables = metrics?.upcomingPayables7d || 0;
+    const receivables = metrics?.upcomingReceivables7d || 0;
+    const expenses = metrics?.monthlyExpenses || 0;
+    const rev = metrics?.monthlyRevenue || 0;
+
+    let finHealthDiag = 'Uma barbearia saudável mantém separação total de contas, reserva de emergência para 3 meses e margem líquida superior a 20%.';
+    if (payables > 0 && receivables > 0) {
+      finHealthDiag = `Contas a pagar nos próximos 7 dias: R$ ${payables.toFixed(2)} vs Recebíveis previstos: R$ ${receivables.toFixed(2)}.`;
+    }
+
     return {
-      topic: 'Recuperação de Clientes Inativos & Recorrência',
-      problem: 'Clientes que cortavam regularmente deixaram de agendar nos últimos 30 a 60 dias.',
-      diagnosis: `${countText} Na maioria das vezes, o cliente não deixou de frequentar por insatisfação, mas por esquecimento e falta de um lembrete no momento certo.`,
-      recommendation: 'Dispare uma campanha de reativação pelo WhatsApp com mensagem amigável e acolhedora convidando para renovar o visual.',
+      topic: 'Diagnóstico de Saúde Financeira & Liquidez',
+      problem: 'Incerteza sobre a lucratividade real e capacidade de honrar compromissos futuros.',
+      diagnosis: finHealthDiag,
+      recommendation: 'Acompanhe diariamente o módulo de Gestão Financeira, registre 100% das despesas e defina um pró-labore fixo para o dono.',
       actionPlan: [
-        { step: 1, title: 'Filtrar Clientes em Risco', detail: 'Acesse a aba Recorrência no BarberFlow e selecione os clientes com mais de 30 dias de ausência.' },
-        { step: 2, title: 'Gerar Mensagem de Reativação', detail: 'Use o Gerador de Mensagens na aba Ferramentas para gerar o texto ideal com tom descontraído.' },
-        { step: 3, title: 'Disparo Fracionado', detail: 'Envie de 10 a 15 mensagens por dia de segunda a quarta-feira para não sobrecarregar as respostas.' },
+        { step: 1, title: 'Separar Caixa Pessoal do Caixa da Empresa', detail: 'Nunca pague contas da sua casa diretamente com o dinheiro do caixa da barbearia.' },
+        { step: 2, title: 'Calcular Ponto de Equilíbrio', detail: 'Use a Calculadora de Break-Even na Academia para saber o faturamento mínimo mensal necessário.' },
+        { step: 3, title: 'Rotina Semanal de Conciliação', detail: 'Toda segunda-feira de manhã, confira os lançamentos e contas a pagar da semana.' },
       ],
-      metric: 'Meta: Reativar pelo menos 20% da base inativa em até 7 dias.',
+      metric: 'Meta: Manter margem líquida acima de 20% e reserva financeira equivalente a 3 meses de custos fixos.',
       modelUsed: 'DETERMINISTIC_RULES_ENGINE',
       responseTimeMs: 0,
     };
   }
 
-  // Topic: MEI / Impostos / Nota Fiscal / CNPJ / DAS / Legal
-  if (q.includes('mei') || q.includes('imposto') || q.includes('cnpj') || q.includes('nota fiscal') || q.includes('das') || q.includes('tribut') || q.includes('legal') || q.includes('lei')) {
+  // Quick Question 6: "Como aumentar meu ticket?" / Ticket Médio / Aumentar Ticket
+  if (q.includes('aumentar meu ticket') || q.includes('ticket médio') || q.includes('ticket')) {
+    const ticketCurrent = metrics?.avgTicket || 45;
     return {
-      topic: 'Legislação, Formalização & MEI',
-      problem: 'Dúvidas sobre formalização, limite do MEI e emissão de notas fiscais de serviço.',
-      diagnosis: 'O barbeiro autônomo pode atuar como MEI no CNAE de cabeleireiro/barbeiro (CNAE 9602-5/01). No entanto, o dono da barbearia com múltiplos parceiros deve atuar sob a Lei do Salão Parceiro para tributar apenas a sua cota-parte retida, evitando bitributação.',
-      recommendation: 'Mantenha a guia mensal do DAS em dia no portal gov.br e emita suas NFS-e pelo Emissor Nacional gratuito do governo.',
+      topic: 'Alavancagem de Ticket Médio por Atendimento',
+      problem: 'Clientes realizam apenas o serviço básico de corte, limitando a receita gerada por hora de cadeira.',
+      diagnosis: `Seu ticket médio atual está em cerca de R$ ${ticketCurrent.toFixed(2)}. Cada R$ 10 adicionais por atendimento representam R$ 2.500 a R$ 4.000 a mais de faturamento mensal limpo.`,
+      recommendation: 'Implemente venda consultiva de produtos na bancada (pomadas, óleos) e ofereça combos de barba com toalha quente.',
       actionPlan: [
-        { step: 1, title: 'Pagar o DAS Mensal', detail: 'Gere o boleto DAS todo dia 20 no Portal do Empreendedor (gov.br) para garantir benefícios previdenciários (INSS).' },
-        { step: 2, title: 'Cadastrar no Emissor Nacional', detail: 'Crie seu acesso no Portal de Gestão NFS-e Nacional para emitir notas fiscais quando solicitadas.' },
-        { step: 3, title: 'Alinhar com Contador', detail: 'Se o faturamento bruto anual total se aproximar do teto do MEI (R$ 81.000), planeje a transição para ME (Simples Nacional).' },
+        { step: 1, title: 'Aplicar Produto Explicando os Benefícios', detail: 'Ensine os barbeiros a finalizar o corte usando a pomada e explicando: "Essa pomada dá efeito matte natural. Quer levar uma hoje?"' },
+        { step: 2, title: 'Criar Tabela de Combos Inteligentes', detail: 'Corte (R$ 45) + Barba (R$ 40) = R$ 85. Crie o Combo Master por R$ 75 com sobrancelha cortesia.' },
+        { step: 3, title: 'Comissão de Produtos para a Equipe', detail: 'Pague de 15% a 20% de comissão sobre venda de produtos para motivar os profissionais.' },
       ],
-      metric: 'Meta: 100% de conformidade fiscal e regularidade no CNPJ sem multas.',
-      disclaimer: 'Aviso Legal/Tributário: Este conteúdo possui finalidade estritamente educacional e informativa. Não substitui a orientação formal de um contador registrado no CRC.',
+      metric: 'Meta: Elevar o ticket médio em pelo menos R$ 10,00 nos próximos 30 dias.',
       modelUsed: 'DETERMINISTIC_RULES_ENGINE',
       responseTimeMs: 0,
     };
   }
 
-  // Topic: Comissões / Equipe / Barbeiros Parceiros / Salário
-  if (q.includes('comissão') || q.includes('comissao') || q.includes('equipe') || q.includes('barbeiro') || q.includes('contratar') || q.includes('pagar barbeiro') || q.includes('salão parceiro')) {
-    return {
-      topic: 'Gestão de Barbeiros Parceiros & Comissões',
-      problem: 'Dúvidas sobre percentual ideal de comissão e como manter a equipe motivada sem comprometer o caixa.',
-      diagnosis: 'Comissões fixas muito altas (ex: 60% ou 70%) quebram a barbearia porque não sobra margem para cobrir aluguel, luz, recepção e impostos. A média saudável de mercado varia entre 45% e 55% para serviços, dependendo de quem fornece os produtos.',
-      recommendation: 'Adote o modelo de Comissão Progressiva e formalize o Contrato de Salão Parceiro (Lei 13.352/2016) para segurança jurídica e incentivo de produção.',
-      actionPlan: [
-        { step: 1, title: 'Estruturar Faixas de Comissão', detail: 'Defina 45% na faixa inicial e 50% ou 52% se o profissional ultrapassar a meta de faturamento mensal.' },
-        { step: 2, title: 'Formalizar o Contrato', detail: 'Garanta que todo barbeiro tenha CNPJ MEI e contrato de parceiro assinado e arquivado.' },
-        { step: 3, title: 'Transparência de Relatórios', detail: 'Utilize o extrato financeiro do BarberFlow para fechamento semanal sem atritos na conferência.' },
-      ],
-      metric: 'Meta: Manter o custo total de comissões abaixo de 52% do faturamento bruto da barbearia.',
-      disclaimer: 'Aviso Educacional: As regras trabalhistas e tributárias devem seguir a Lei 13.352/2016. Consulte seu contador para homologação do contrato.',
-      modelUsed: 'DETERMINISTIC_RULES_ENGINE',
-      responseTimeMs: 0,
-    };
-  }
+  // Quick Question 7: "Como aumentar meu faturamento?" / Faturamento / Ganhar Mais
+  if (q.includes('aumentar meu faturamento') || q.includes('faturamento') || q.includes('vendas') || q.includes('ganhar mais') || q.includes('crescer')) {
+    const revText = metrics?.monthlyRevenue
+      ? `Seu faturamento recente registrado é de R$ ${metrics.monthlyRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+      : 'O faturamento de uma barbearia é uma multiplicação simples: Número de Clientes x Frequência no Mês x Ticket Médio.';
 
-  // Topic: Faturamento / Aumentar Vendas / Metas / Lucro
-  if (q.includes('faturamento') || q.includes('vendas') || q.includes('lucro') || q.includes('meta') || q.includes('dinheiro') || q.includes('ganhar mais') || q.includes('crescer')) {
-    const revText = metrics?.monthlyRevenue ? `Seu faturamento recente registrado é de R$ ${metrics.monthlyRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.` : 'O faturamento é resultado direto de 3 alavancas: Número de Clientes x Frequência x Ticket Médio.';
     return {
       topic: 'Alavancagem de Faturamento & Vendas',
       problem: 'Desejo de aumentar o faturamento mensal da barbearia de forma previsível e consistente.',
-      diagnosis: `${revText} Para crescer 30%, o caminho mais rápido não é trabalhar 30% mais horas, mas sim: 1) Elevar o ticket médio com venda de pomadas e sobrancelha; 2) Reduzir o tempo entre cortes de 30 para 20 dias.`,
-      recommendation: 'Implemente uma meta diária clara por cadeira e ative a venda consultiva de produtos de cuidados masculinos na bancada.',
+      diagnosis: `${revText} Para crescer 30% em faturamento, não é preciso dobrar o número de horas trabalhadas. Basta ajustar 3 engrenagens: 1) Elevar ticket médio em R$ 10; 2) Preencher terças e quartas com combos; 3) Reativar 20 clientes ausentes.`,
+      recommendation: 'Execute o diagnóstico da Academia BarberFlow e siga o plano de ação semanal priorizado.',
       actionPlan: [
-        { step: 1, title: 'Desdobrar a Meta em Cortes Diários', detail: 'Divida o faturamento almejado pelos dias de trabalho e número de barbeiros usando a Calculadora de Metas.' },
-        { step: 2, title: 'Oferecer Produtos na Saída', detail: 'Ensine a equipe a explicar a pomada ou óleo usado na finalização. 2 pomadas vendidas por dia geram mais de R$ 1.500 no mês.' },
-        { step: 3, title: 'Reagendamento Imediato', detail: 'Agende o próximo retorno do cliente logo no balcão antes de ele sair da barbearia.' },
+        { step: 1, title: 'Desdobrar Metas Diárias', detail: 'Divida o faturamento almejado pelos dias do mês usando a Calculadora de Metas da Academia.' },
+        { step: 2, title: 'Ativar a Base Inativa', detail: 'Recupere clientes que não cortam há mais de 30 dias pelo módulo de Recorrência.' },
+        { step: 3, title: 'Venda de Produtos na Saída', detail: 'Coloque expositor visível de pomadas e pós-barba na recepção.' },
       ],
-      metric: 'Meta: Aumentar o ticket médio em pelo menos R$ 10,00 nos próximos 30 dias.',
+      metric: 'Meta: Crescimento de 20% a 35% no faturamento bruto nos próximos 60 dias.',
       modelUsed: 'DETERMINISTIC_RULES_ENGINE',
       responseTimeMs: 0,
     };
@@ -201,6 +249,45 @@ function generateDeterministicAdvice(q: string, metrics?: TenantMetricsSnapshot)
       responseTimeMs: 0,
     };
   }
+
+  // Topic: Legislação / MEI / Lei Salão Parceiro / Impostos
+  if (q.includes('mei') || q.includes('legisla') || q.includes('salão parceiro') || q.includes('salao parceiro') || q.includes('contrato') || q.includes('imposto') || q.includes('tribut')) {
+    return {
+      topic: 'Legislação, MEI & Lei Salão Parceiro',
+      problem: 'Dúvidas jurídicas, tributárias e de formalização contratual para barbearias.',
+      diagnosis: 'A Lei do Salão Parceiro (Lei 13.352/2016) permite a parceria formal entre a barbearia (Salão-Parceiro) e os barbeiros (Profissionais-Parceiros como MEI), eliminando o risco trabalhista de vínculo empregatício quando homologado corretamente.',
+      recommendation: 'Formalize os contratos de parceria pela Lei Salão Parceiro e mantenha o recolhimento do DAS-MEI em dia.',
+      actionPlan: [
+        { step: 1, title: 'Adotar Contrato Padrão de Salão Parceiro', detail: 'Utilize o modelo oficial de contrato de parceria disponível na aba Ferramentas ou no Sebrae.' },
+        { step: 2, title: 'Controlar o Limite Anual do MEI', detail: 'Monitore o teto de faturamento anual do MEI (R$ 81.000) e considere desenquadramento para ME se necessário.' },
+        { step: 3, title: 'Emitir Recibos de Repasse', detail: 'Separe no sistema a cota-parte da barbearia e a cota-parte dos profissionais para fins contábeis.' },
+      ],
+      metric: 'Meta: 100% da equipe parceira regularizada com contrato assinado e MEI ativo.',
+      disclaimer: 'Aviso: Esta orientação possui caráter estritamente educacional e informativo. Consulte sempre um contador habilitado para orientações fiscais específicas.',
+      modelUsed: 'DETERMINISTIC_RULES_ENGINE',
+      responseTimeMs: 0,
+    };
+  }
+
+  // Topic: Comissões e Gestão de Barbeiros Parceiros
+  if (q.includes('comiss') || q.includes('porcentagem') || q.includes('quanto pagar') || q.includes('comissão')) {
+    return {
+      topic: 'Gestão de Comissões e Equipe Parceira',
+      problem: 'Definição de percentuais justos e sustentáveis de comissão para barbeiros parceiros.',
+      diagnosis: 'Comissões muito altas (acima de 60%) quebram a barbearia porque não deixam margem para cobrir aluguel, luz, recepção e marketing. A média de mercado sustentável varia entre 40% e 50% para serviços e 15% a 20% para venda de produtos.',
+      recommendation: 'Estruture uma tabela de comissões com escalonamento por metas de faturamento e pontualidade.',
+      actionPlan: [
+        { step: 1, title: 'Calcular Margem de Contribuição', detail: 'Use a Calculadora de Comissões na Academia para simular o lucro da barbearia após o repasse.' },
+        { step: 2, title: 'Definir Regras de Desconto de Insumos', detail: 'Deixe acordado no contrato se a barbearia ou o barbeiro fornece produtos (lâminas, pomadas, capas).' },
+        { step: 3, title: 'Apresentar Tabela de Metas', detail: 'Bonifique o profissional que bater meta mensal de atendimentos com 2% a 5% extras de comissão.' },
+      ],
+      metric: 'Meta: Manter o custo total de repasse de comissões em no máximo 50% do faturamento bruto da barbearia.',
+      disclaimer: 'Conteúdo educacional para apoio à gestão de barbearias.',
+      modelUsed: 'DETERMINISTIC_RULES_ENGINE',
+      responseTimeMs: 0,
+    };
+  }
+
 
   // Fallback Geral Inteligente
   return {
