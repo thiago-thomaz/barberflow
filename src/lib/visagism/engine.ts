@@ -227,6 +227,30 @@ export async function deleteVisagismPhoto(sessionId: string) {
 }
 
 /**
+ * Retorna o buffer e mime-type da foto salva do cliente
+ */
+export async function getVisagismPhotoBuffer(sessionId: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  const session = await prisma.visagismSession.findUnique({
+    where: { id: sessionId },
+  });
+
+  if (!session || !session.photoStorageKey || session.photoDeletedAt) {
+    return null;
+  }
+
+  const filePath = path.join(VISAGISM_STORAGE_DIR, session.photoStorageKey);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  const buffer = fs.readFileSync(filePath);
+  return {
+    buffer,
+    mimeType: session.photoMimeType || 'image/jpeg',
+  };
+}
+
+/**
  * Executa a avaliação do questionário de Visagismo e persiste o perfil e as recomendações
  */
 export async function evaluateVisagismSession(

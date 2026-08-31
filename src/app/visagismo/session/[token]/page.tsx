@@ -21,6 +21,10 @@ import {
   RotateCcw,
   Star,
   Check,
+  Maximize2,
+  ZoomIn,
+  X,
+  Loader2,
 } from 'lucide-react';
 import { Modal } from '@/components/UI/Modal';
 import { Badge } from '@/components/UI/Badge';
@@ -62,9 +66,44 @@ export default function VisagismoSessionPage() {
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [selectedRecIndex, setSelectedRecIndex] = useState<number>(0);
 
+  // AI Generated Visual Previews (Face Inpainting)
+  const [aiPreviews, setAiPreviews] = useState<Record<number, string>>({});
+  const [generatingPreview, setGeneratingPreview] = useState<boolean>(false);
+
+  // Lightbox Zoom Modal (Expansão em Tela Cheia)
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string; subtitle?: string } | null>(null);
+
   // Share & Action states
   const [sharing, setSharing] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState(false);
+
+  // Função para gerar ou recuperar montagem de IA do cliente com o corte escolhido
+  const triggerAiPreview = async (recIndex: number, currentRecs?: any[]) => {
+    const list = currentRecs || recommendations;
+    const targetRec = list[recIndex];
+    if (!targetRec || !photoPreview) return;
+    if (aiPreviews[recIndex]) return; // Já gerado em cache
+
+    setGeneratingPreview(true);
+    try {
+      const res = await fetch(`/api/visagismo/session/${token}/generate-preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetImageUrl: targetRec.referenceImageUrl,
+          haircutName: targetRec.haircutName,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.previewUrl) {
+        setAiPreviews((prev) => ({ ...prev, [recIndex]: data.previewUrl }));
+      }
+    } catch (err) {
+      console.warn('Erro ao gerar preview facial:', err);
+    } finally {
+      setGeneratingPreview(false);
+    }
+  };
 
   // Load Session
   useEffect(() => {
@@ -94,6 +133,9 @@ export default function VisagismoSessionPage() {
           if (data.session.recommendations && data.session.recommendations.length > 0) {
             setRecommendations(data.session.recommendations);
             setStep(6); // Go to results if already evaluated
+            if (data.session.hasPhoto) {
+              triggerAiPreview(0, data.session.recommendations);
+            }
           }
         } else {
           setError(data.error || 'Sessão não encontrada ou expirada');
@@ -111,18 +153,19 @@ export default function VisagismoSessionPage() {
   // Handle Photo Selection
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('A foto deve ter no máximo 5MB.');
-        return;
-      }
-      setPhotoFile(file);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setPhotoPreview(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('A foto deve ter no máximo 5MB.');
+      return;
     }
+
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setPhotoPreview(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   // Upload Photo with Consent
@@ -178,6 +221,7 @@ export default function VisagismoSessionPage() {
       await fetch(`/api/visagismo/session/${token}/photo`, { method: 'DELETE' });
       setPhotoPreview(null);
       setPhotoFile(null);
+      setAiPreviews({});
       alert('Foto excluída com sucesso.');
     } catch (err) {
       alert('Erro ao excluir foto.');
@@ -208,6 +252,11 @@ export default function VisagismoSessionPage() {
       setRecommendations(data.evaluation.recommendations);
       setSelectedRecIndex(0);
       setStep(6); // Step 6: Resultados
+
+      // Dispara montagem facial via Replicate para a 1ª recomendação
+      if (photoPreview) {
+        triggerAiPreview(0, data.evaluation.recommendations);
+      }
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -772,7 +821,10 @@ export default function VisagismoSessionPage() {
               {recommendations.map((rec, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setSelectedRecIndex(idx)}
+                  onClick={() => {
+                    setSelectedRecIndex(idx);
+                    triggerAiPreview(idx);
+                  }}
                   className={`p-3 rounded-2xl border text-center transition-all ${
                     selectedRecIndex === idx
                       ? 'bg-amber-500 text-black border-amber-400 font-bold shadow-lg shadow-amber-500/20'
@@ -788,6 +840,8 @@ export default function VisagismoSessionPage() {
             {/* Selected Recommendation Card */}
             {(() => {
               const current = recommendations[selectedRecIndex];
+              const aiPreviewImg = aiPreviews[selectedRecIndex];
+
               return (
                 <div className="bg-[#14171F] border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
                   {/* Title & Score */}
@@ -803,10 +857,10 @@ export default function VisagismoSessionPage() {
                     <Badge variant="warning">{current.score}% Match</Badge>
                   </div>
 
-                  {/* VISUAL SHOWCASE: FOTO DA PESSOA + FOTO DO CORTE RECOMENDADO */}
+                  {/* VISUAL SHOWCASE: FOTO ORIGINAL + SEU ROSTO COM NOVO CORTE (IA) */}
                   <div className="space-y-2">
                     <div className={`grid gap-3 ${photoPreview ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                      {/* Foto do Cliente (se houver) */}
+                      {/* Foto do Cliente (Original) */}
                       {photoPreview && (
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
@@ -815,43 +869,92 @@ export default function VisagismoSessionPage() {
                               {faceShape}
                             </span>
                           </div>
-                          <div className="relative aspect-square rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900 shadow-inner group">
+                          <div
+                            onClick={() =>
+                              setLightboxImage({
+                                url: photoPreview,
+                                title: 'Sua Foto Original',
+                                subtitle: `Formato de rosto identificado: ${faceShape}`,
+                              })
+                            }
+                            className="relative aspect-square rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900 shadow-inner group cursor-pointer"
+                          >
                             <img
                               src={photoPreview}
-                              alt="Sua foto"
+                              alt="Sua foto original"
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                            <span className="absolute bottom-2 left-2 text-[9px] font-bold text-white bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10">
-                              Original
+                            <div className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white/80 group-hover:text-amber-400 transition-colors">
+                              <Maximize2 className="h-3.5 w-3.5" />
+                            </div>
+                            <span className="absolute bottom-2 left-2 text-[9px] font-bold text-white bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10 flex items-center gap-1">
+                              <ZoomIn className="h-2.5 w-2.5" /> Original
                             </span>
                           </div>
                         </div>
                       )}
 
-                      {/* Foto de Referência do Corte Escolhido */}
+                      {/* Foto com Corte Aplicado no Rosto (IA) ou Referência */}
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
-                          <span>{photoPreview ? 'Visual Recomendado' : 'Referência do Corte'}</span>
-                          <span className="text-emerald-400 text-[9px] bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                            Alta Definição
+                          <span>{aiPreviewImg ? '✨ Você com o Corte (IA)' : 'Visual Recomendado'}</span>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
+                            aiPreviewImg
+                              ? 'text-amber-400 bg-amber-500/15 border-amber-500/30 font-bold'
+                              : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                          }`}>
+                            {aiPreviewImg ? 'IA Aplicada' : 'Alta Definição'}
                           </span>
                         </div>
-                        <div className={`relative ${photoPreview ? 'aspect-square' : 'aspect-video sm:aspect-[2/1]'} rounded-2xl overflow-hidden border border-amber-500/30 bg-zinc-900 shadow-xl group`}>
-                          <img
-                            src={current.referenceImageUrl || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=800&q=80'}
-                            alt={current.haircutName}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
-                          <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
-                            <span className="text-[10px] font-extrabold text-amber-300 bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-amber-500/30">
-                              ✂️ {current.haircutName}
-                            </span>
-                            <span className="text-[9px] font-semibold text-zinc-300 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10">
-                              {current.haircutStyle}
-                            </span>
-                          </div>
+
+                        {/* Card com Foto Gerada por IA ou Referência */}
+                        <div
+                          onClick={() => {
+                            const targetUrl = aiPreviewImg || current.referenceImageUrl;
+                            if (targetUrl) {
+                              setLightboxImage({
+                                url: targetUrl,
+                                title: `${current.haircutName} — ${current.haircutStyle}`,
+                                subtitle: aiPreviewImg
+                                  ? 'Visual gerado por inteligência artificial aplicado ao seu rosto'
+                                  : 'Referência fotográfica em alta definição',
+                              });
+                            }
+                          }}
+                          className={`relative ${photoPreview ? 'aspect-square' : 'aspect-video sm:aspect-[2/1]'} rounded-2xl overflow-hidden border ${
+                            aiPreviewImg ? 'border-amber-500 shadow-amber-500/20' : 'border-amber-500/30'
+                          } bg-zinc-900 shadow-xl group cursor-pointer`}
+                        >
+                          {generatingPreview && !aiPreviewImg ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-950 p-4 text-center space-y-2">
+                              <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
+                              <p className="text-[11px] font-bold text-amber-300">Aplicando corte no seu rosto...</p>
+                              <p className="text-[9px] text-zinc-500">IA Replicate em processamento</p>
+                            </div>
+                          ) : (
+                            <>
+                              <img
+                                src={aiPreviewImg || current.referenceImageUrl || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=800&q=80'}
+                                alt={current.haircutName}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none" />
+                              <div className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white/80 group-hover:text-amber-400 transition-colors">
+                                <Maximize2 className="h-3.5 w-3.5" />
+                              </div>
+                              <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+                                <span className="text-[9px] font-extrabold text-amber-300 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
+                                  <ZoomIn className="h-2.5 w-2.5" /> ✂️ {current.haircutName}
+                                </span>
+                                {aiPreviewImg && (
+                                  <span className="text-[8px] font-bold text-emerald-300 bg-emerald-950/80 backdrop-blur-sm px-1.5 py-0.5 rounded border border-emerald-500/30">
+                                    ✨ Face IA
+                                  </span>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -948,6 +1051,50 @@ export default function VisagismoSessionPage() {
               ))}
           </div>
         </Modal>
+
+        {/* ========================================================================= */}
+        {/* LIGHTBOX: EXPANSÃO DE FOTOS EM TELA CHEIA (ZOOM) */}
+        {/* ========================================================================= */}
+        {lightboxImage && (
+          <div
+            onClick={() => setLightboxImage(null)}
+            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-center p-4 animate-in fade-in duration-200"
+          >
+            {/* Top Bar */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg flex items-center justify-between p-3 mb-2 rounded-2xl bg-zinc-900/90 border border-zinc-800 text-white"
+            >
+              <div>
+                <p className="font-extrabold text-sm text-white">{lightboxImage.title}</p>
+                {lightboxImage.subtitle && (
+                  <p className="text-[11px] text-zinc-400">{lightboxImage.subtitle}</p>
+                )}
+              </div>
+              <button
+                onClick={() => setLightboxImage(null)}
+                className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Main Image Frame */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-w-lg max-h-[75vh] w-full rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl bg-black flex items-center justify-center"
+            >
+              <img
+                src={lightboxImage.url}
+                alt={lightboxImage.title}
+                className="w-full h-auto max-h-[75vh] object-contain"
+              />
+            </div>
+
+            {/* Bottom Dismiss Hint */}
+            <p className="text-zinc-500 text-xs mt-3">Toque fora ou no X para fechar</p>
+          </div>
+        )}
       </div>
     </div>
   );
