@@ -58,7 +58,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Pouco',
     suggestedServiceKeywords: ['corte', 'degrade', 'fade', 'social'],
     stylingTips: 'Manutenção a cada 15 a 20 dias para manter a transição limpa.',
-    referenceImageUrl: '/images/visagismo/low-fade.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'mid-fade',
@@ -72,7 +72,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte', 'degrade', 'fade', 'moderno'],
     stylingTips: 'Excelente para quem quer presença marcante sem perder elegância.',
-    referenceImageUrl: '/images/visagismo/mid-fade.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'high-fade',
@@ -86,7 +86,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Radical',
     suggestedServiceKeywords: ['corte', 'high fade', 'degrade'],
     stylingTips: 'Exige manutenção frequente (10 a 15 dias) para preservar o contraste nítido.',
-    referenceImageUrl: '/images/visagismo/high-fade.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1517832606299-7ae9b720a186?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'skin-fade',
@@ -100,7 +100,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Radical',
     suggestedServiceKeywords: ['navalhado', 'corte', 'fade'],
     stylingTips: 'Finalize com loção pós-barba nas laterais e pomada matte no topo.',
-    referenceImageUrl: '/images/visagismo/skin-fade.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'taper-fade',
@@ -114,7 +114,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Pouco',
     suggestedServiceKeywords: ['corte', 'social', 'classico', 'taper'],
     stylingTips: 'Perfeito para ambientes formais e quem prefere maior intervalo entre cortes.',
-    referenceImageUrl: '/images/visagismo/taper-fade.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'buzz-cut',
@@ -128,7 +128,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Radical',
     suggestedServiceKeywords: ['maquina', 'corte militar', 'corte'],
     stylingTips: 'Zero trabalho diário para pentear; ideal para rotinas aceleradas.',
-    referenceImageUrl: '/images/visagismo/buzz-cut.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'crew-cut',
@@ -142,7 +142,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Pouco',
     suggestedServiceKeywords: ['social', 'corte', 'executivo'],
     stylingTips: 'Finalização rápida com pouco creme ou pasta modeladora.',
-    referenceImageUrl: '/images/visagismo/crew-cut.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'french-crop',
@@ -156,7 +156,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte', 'crop', 'moderno'],
     stylingTips: 'Use pó modelador ou pomada matte para criar textura sem brilho.',
-    referenceImageUrl: '/images/visagismo/french-crop.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'textured-crop',
@@ -170,7 +170,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte', 'texturizado', 'fade'],
     stylingTips: 'Excelente para dar movimento a cabelos lisos ou levemente ondulados.',
-    referenceImageUrl: '/images/visagismo/textured-crop.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'pompadour',
@@ -184,7 +184,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte', 'pompadour', 'corte premium'],
     stylingTips: 'Secador e escova redonda para dar estrutura, seguido de pomada pomade com brilho médio.',
-    referenceImageUrl: '/images/visagismo/pompadour.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'quiff',
@@ -198,7 +198,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte', 'quiff', 'moderno'],
     stylingTips: 'Secador apontando para cima com fixação matte flexível.',
-    referenceImageUrl: '/images/visagismo/quiff.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'slick-back',
@@ -212,7 +212,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte', 'social', 'executivo'],
     stylingTips: 'Funciona muito bem com pomadas à base de água de fixação média a forte.',
-    referenceImageUrl: '/images/visagismo/slick-back.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'side-part',
@@ -226,7 +226,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Pouco',
     suggestedServiceKeywords: ['corte social', 'corte tradicional', 'corte'],
     stylingTips: 'Pente fino para assentar a linha de divisão e pomada clássica.',
-    referenceImageUrl: '/images/visagismo/side-part.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'corte-social',
@@ -240,7 +240,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Pouco',
     suggestedServiceKeywords: ['corte social', 'corte', 'tradicional'],
     stylingTips: 'Extremamente prático no dia a dia, combina com qualquer ocasião.',
-    referenceImageUrl: '/images/visagismo/corte-social.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'corte-executivo',
@@ -254,7 +254,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Pouco',
     suggestedServiceKeywords: ['corte', 'social', 'barba'],
     stylingTips: 'Manutenção mensal e hidratação leve periódica.',
-    referenceImageUrl: '/images/visagismo/executivo.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'long-hair-layers',
@@ -268,7 +268,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte longo', 'corte', 'lavagem'],
     stylingTips: 'Leave-in hidratante e secagem natural para preservar o balanço.',
-    referenceImageUrl: '/images/visagismo/long-hair.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1519764622345-23439dd774f7?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'curly-fade',
@@ -282,7 +282,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte', 'cachos', 'fade'],
     stylingTips: 'Ativador de cachos e esponja twist ou fitagem para definição duradoura.',
-    referenceImageUrl: '/images/visagismo/curly-fade.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'corte-despojado-surfer',
@@ -296,7 +296,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte', 'tesoura', 'textura'],
     stylingTips: 'Spray de sal marinho (sea salt spray) para volume texturizado natural.',
-    referenceImageUrl: '/images/visagismo/medium-flow.webp',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=800&q=80',
   },
 ];
 

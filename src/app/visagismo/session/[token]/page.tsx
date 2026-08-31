@@ -803,6 +803,60 @@ export default function VisagismoSessionPage() {
                     <Badge variant="warning">{current.score}% Match</Badge>
                   </div>
 
+                  {/* VISUAL SHOWCASE: FOTO DA PESSOA + FOTO DO CORTE RECOMENDADO */}
+                  <div className="space-y-2">
+                    <div className={`grid gap-3 ${photoPreview ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      {/* Foto do Cliente (se houver) */}
+                      {photoPreview && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
+                            <span>Sua Foto</span>
+                            <span className="text-amber-400 text-[9px] bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                              {faceShape}
+                            </span>
+                          </div>
+                          <div className="relative aspect-square rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900 shadow-inner group">
+                            <img
+                              src={photoPreview}
+                              alt="Sua foto"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                            <span className="absolute bottom-2 left-2 text-[9px] font-bold text-white bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10">
+                              Original
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Foto de Referência do Corte Escolhido */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
+                          <span>{photoPreview ? 'Visual Recomendado' : 'Referência do Corte'}</span>
+                          <span className="text-emerald-400 text-[9px] bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                            Alta Definição
+                          </span>
+                        </div>
+                        <div className={`relative ${photoPreview ? 'aspect-square' : 'aspect-video sm:aspect-[2/1]'} rounded-2xl overflow-hidden border border-amber-500/30 bg-zinc-900 shadow-xl group`}>
+                          <img
+                            src={current.referenceImageUrl || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=800&q=80'}
+                            alt={current.haircutName}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
+                          <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+                            <span className="text-[10px] font-extrabold text-amber-300 bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-amber-500/30">
+                              ✂️ {current.haircutName}
+                            </span>
+                            <span className="text-[9px] font-semibold text-zinc-300 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10">
+                              {current.haircutStyle}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Detalhes de Barba e Cor */}
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800">
