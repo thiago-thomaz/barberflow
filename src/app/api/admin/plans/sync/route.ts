@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
-export const OFFICIAL_PLANS = [
+const OFFICIAL_PLANS = [
   {
     name: 'Starter',
     tier: 'STARTER',
