@@ -24,49 +24,70 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.barbershop.deleteMany();
 
-  // 2. Plans (Starter, Pro, Business)
+  // 2. Official Plans (Starter, Profissional, Redes & Franquias)
   const starterPlan = await prisma.plan.create({
     data: {
       name: 'Starter',
       tier: 'STARTER',
-      price: 59.9,
+      price: 59.0,
       interval: 'MONTHLY',
       maxBarbers: 2,
-      maxMonthlyAppointments: 200,
+      maxMonthlyAppointments: 500,
       hasWhatsappAutomation: false,
       hasAdvancedAnalytics: false,
       hasMultiUnit: false,
-      featuresJson: JSON.stringify(['Até 2 Barbeiros', 'Agendamentos Básicos', 'Página Pública']),
+      featuresJson: JSON.stringify([
+        'Até 2 Barbeiros',
+        'Agenda e Agendamento Público',
+        'Motor de Recorrência Básico',
+        'Gestão de Clientes',
+        'Página Pública de Agendamento',
+      ]),
     },
   });
 
   const proPlan = await prisma.plan.create({
     data: {
-      name: 'PRO',
+      name: 'Profissional',
       tier: 'PRO',
-      price: 89.9,
+      price: 119.0,
       interval: 'MONTHLY',
-      maxBarbers: 5,
-      maxMonthlyAppointments: 1000,
+      maxBarbers: 999,
+      maxMonthlyAppointments: 10000,
       hasWhatsappAutomation: true,
       hasAdvancedAnalytics: true,
       hasMultiUnit: false,
-      featuresJson: JSON.stringify(['Até 5 Barbeiros', 'Agendamentos ilimitados', 'Motor de Recorrência', 'Webhooks n8n', 'WhatsApp Automação', 'Página Pública']),
+      featuresJson: JSON.stringify([
+        'Barbeiros Ilimitados',
+        'Dinheiro na Mesa Completo',
+        'Integração com n8n & Webhooks',
+        'QR Code do Balcão',
+        'Relatórios Financeiros & Comissões',
+        'Automação WhatsApp & Lembretes',
+        'Motor de Recorrência Inteligente',
+      ]),
     },
   });
 
   const businessPlan = await prisma.plan.create({
     data: {
-      name: 'Business',
+      name: 'Redes & Franquias',
       tier: 'BUSINESS',
-      price: 189.9,
+      price: 229.0,
       interval: 'MONTHLY',
-      maxBarbers: 15,
-      maxMonthlyAppointments: 5000,
+      maxBarbers: 9999,
+      maxMonthlyAppointments: 50000,
       hasWhatsappAutomation: true,
       hasAdvancedAnalytics: true,
       hasMultiUnit: true,
-      featuresJson: JSON.stringify(['Até 15 Barbeiros', 'Multi-Unidades', 'Analytics Avançado', 'Automação WhatsApp VIP']),
+      featuresJson: JSON.stringify([
+        'Múltiplas Barbearias / Tenants',
+        'Suporte Prioritário VIP',
+        'Servidor Dedicado / Webhooks ilimitados',
+        'Auditoria e Logs Avançados',
+        'Todas as funcionalidades do Profissional',
+        'Gestão Multi-Unidades',
+      ]),
     },
   });
 

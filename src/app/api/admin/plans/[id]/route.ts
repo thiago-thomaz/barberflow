@@ -75,3 +75,60 @@ export async function PATCH(
     return NextResponse.json({ error: 'Erro ao atualizar plano' }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { user: adminUser } = await requireSuperAdmin(req);
+
+    const plan = await prisma.plan.findUnique({
+      where: { id: params.id },
+      include: {
+        _count: {
+          select: { subscriptions: true },
+        },
+      },
+    });
+
+    if (!plan) {
+      return NextResponse.json({ error: 'Plano não encontrado' }, { status: 404 });
+    }
+
+    if (plan._count.subscriptions > 0) {
+      return NextResponse.json(
+        { error: `Não é possível excluir o plano ${plan.name} porque existem ${plan._count.subscriptions} barbearia(s) assinando este plano.` },
+        { status: 400 }
+      );
+    }
+
+    await prisma.plan.delete({
+      where: { id: params.id },
+    });
+
+    await logAdminAuditEvent({
+      adminUserId: adminUser.id,
+      action: 'DELETE_PLAN',
+      entity: 'Plan',
+      entityId: params.id,
+      metadata: { deletedPlan: { id: plan.id, name: plan.name, tier: plan.tier } },
+      req,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Plano ${plan.name} excluído com sucesso`,
+    });
+  } catch (error: any) {
+    if (error.message === 'UNAUTHORIZED') {
+      return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
+    }
+    if (error.message === 'FORBIDDEN') {
+      return NextResponse.json({ error: 'Acesso restrito ao Super Admin' }, { status: 403 });
+    }
+    console.error('[AdminPlanDelete API Error]:', error);
+    return NextResponse.json({ error: 'Erro ao excluir plano' }, { status: 500 });
+  }
+}
+
