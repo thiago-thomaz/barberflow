@@ -72,3 +72,84 @@ export async function requireAuth(req: NextRequest) {
   }
   return session;
 }
+
+export function isSuperAdmin(session: TokenPayload | null): boolean {
+  return session?.role === 'SUPER_ADMIN';
+}
+
+export async function requireSuperAdmin(req: NextRequest) {
+  const session = getSessionFromRequest(req);
+  if (!session) {
+    throw new Error('UNAUTHORIZED');
+  }
+  if (session.role !== 'SUPER_ADMIN') {
+    throw new Error('FORBIDDEN');
+  }
+
+  // Database verification to prevent stale/tampered tokens
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { id: true, email: true, name: true, role: true },
+  });
+
+  if (!user || user.role !== 'SUPER_ADMIN') {
+    throw new Error('FORBIDDEN');
+  }
+
+  return { session, user };
+}
+
+export async function logAdminAuditEvent({
+  adminUserId,
+  action,
+  entity,
+  entityId,
+  tenantId,
+  metadata,
+  req,
+}: {
+  adminUserId: string;
+  action: 'LOGIN' | 'LOGOUT' | 'SUSPEND_TENANT' | 'REACTIVATE_TENANT' | 'CHANGE_PLAN' | 'UPDATE_USER' | 'CREATE_PLAN' | 'UPDATE_PLAN' | 'RECORD_PAYMENT' | 'IMPERSONATE' | 'CONFIG_UPDATE' | string;
+  entity: 'Barbershop' | 'User' | 'Plan' | 'Subscription' | 'SaaSPayment' | 'SaaSSetting' | string;
+  entityId?: string | null;
+  tenantId?: string | null;
+  metadata?: Record<string, any> | null;
+  req?: NextRequest | null;
+}) {
+  try {
+    let ipAddress: string | null = null;
+    let userAgent: string | null = null;
+
+    if (req) {
+      ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip') || null;
+      userAgent = req.headers.get('user-agent') || null;
+    }
+
+    // Sanitize metadata to guarantee NO secrets/passwords/tokens are saved
+    const safeMeta = metadata ? { ...metadata } : null;
+    if (safeMeta) {
+      delete safeMeta.password;
+      delete safeMeta.passwordHash;
+      delete safeMeta.token;
+      delete safeMeta.tokenHash;
+      delete safeMeta.apiKey;
+      delete safeMeta.secret;
+    }
+
+    return await prisma.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action,
+        entity,
+        entityId: entityId || null,
+        tenantId: tenantId || null,
+        metadata: safeMeta ? JSON.stringify(safeMeta) : null,
+        ipAddress,
+        userAgent,
+      },
+    });
+  } catch (err) {
+    console.error('[AdminAuditLog] Error logging administrative action:', err);
+  }
+}
+

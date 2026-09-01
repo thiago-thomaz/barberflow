@@ -158,10 +158,68 @@ export async function ensureDatabaseSchema() {
       )
     `).catch(() => {});
 
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AdminAuditLog" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "adminUserId" TEXT NOT NULL,
+        "action" TEXT NOT NULL,
+        "entity" TEXT NOT NULL,
+        "entityId" TEXT,
+        "tenantId" TEXT,
+        "metadata" TEXT,
+        "ipAddress" TEXT,
+        "userAgent" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "AdminAuditLog_adminUserId_fkey" FOREIGN KEY ("adminUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "AdminAuditLog_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Barbershop" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "SaaSPayment" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "barbershopId" TEXT NOT NULL,
+        "subscriptionId" TEXT,
+        "amount" REAL NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'PAID',
+        "method" TEXT NOT NULL DEFAULT 'PIX',
+        "paidAt" DATETIME,
+        "dueDate" DATETIME,
+        "periodStart" DATETIME,
+        "periodEnd" DATETIME,
+        "reference" TEXT,
+        "notes" TEXT,
+        "metadata" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "SaaSPayment_barbershopId_fkey" FOREIGN KEY ("barbershopId") REFERENCES "Barbershop" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "SaaSPayment_subscriptionId_fkey" FOREIGN KEY ("subscriptionId") REFERENCES "Subscription" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "SaaSSetting" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "key" TEXT NOT NULL,
+        "value" TEXT NOT NULL,
+        "category" TEXT NOT NULL DEFAULT 'GENERAL',
+        "description" TEXT,
+        "isEncrypted" BOOLEAN NOT NULL DEFAULT 0,
+        "updatedBy" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `).catch(() => {});
+
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "WhatsappSession_barbershopId_phone_key" ON "WhatsappSession"("barbershopId", "phone")`).catch(() => {});
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "AppointmentReminder_appointmentId_reminderType_key" ON "AppointmentReminder"("appointmentId", "reminderType")`).catch(() => {});
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "EducationProgress_userId_contentId_key" ON "EducationProgress"("userId", "contentId")`).catch(() => {});
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "EducationFavorite_userId_contentId_key" ON "EducationFavorite"("userId", "contentId")`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "SaaSSetting_key_key" ON "SaaSSetting"("key")`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AdminAuditLog_adminUserId_idx" ON "AdminAuditLog"("adminUserId")`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AdminAuditLog_action_idx" ON "AdminAuditLog"("action")`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SaaSPayment_barbershopId_idx" ON "SaaSPayment"("barbershopId")`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SaaSPayment_status_idx" ON "SaaSPayment"("status")`).catch(() => {});
   } catch (err) {
     console.warn('[DB AutoSync] Warning during schema sync:', err);
   }

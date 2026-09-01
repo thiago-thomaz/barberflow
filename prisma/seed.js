@@ -7,6 +7,8 @@ async function main() {
   console.log('🌱 Starting BarberFlow Demo Seed...');
 
   // 1. Clean previous data
+  if (prisma.adminAuditLog) await prisma.adminAuditLog.deleteMany();
+  if (prisma.saasPayment) await prisma.saasPayment.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.automationEvent.deleteMany();
   await prisma.webhook.deleteMany();
@@ -22,13 +24,49 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.barbershop.deleteMany();
 
-  // 2. Plans
+  // 2. Plans (Starter, Pro, Business)
+  const starterPlan = await prisma.plan.create({
+    data: {
+      name: 'Starter',
+      tier: 'STARTER',
+      price: 59.9,
+      interval: 'MONTHLY',
+      maxBarbers: 2,
+      maxMonthlyAppointments: 200,
+      hasWhatsappAutomation: false,
+      hasAdvancedAnalytics: false,
+      hasMultiUnit: false,
+      featuresJson: JSON.stringify(['Até 2 Barbeiros', 'Agendamentos Básicos', 'Página Pública']),
+    },
+  });
+
   const proPlan = await prisma.plan.create({
     data: {
       name: 'PRO',
+      tier: 'PRO',
       price: 89.9,
       interval: 'MONTHLY',
-      featuresJson: JSON.stringify(['Agendamentos ilimitados', 'Motor de Recorrência', 'Webhooks n8n', 'Página Pública']),
+      maxBarbers: 5,
+      maxMonthlyAppointments: 1000,
+      hasWhatsappAutomation: true,
+      hasAdvancedAnalytics: true,
+      hasMultiUnit: false,
+      featuresJson: JSON.stringify(['Até 5 Barbeiros', 'Agendamentos ilimitados', 'Motor de Recorrência', 'Webhooks n8n', 'WhatsApp Automação', 'Página Pública']),
+    },
+  });
+
+  const businessPlan = await prisma.plan.create({
+    data: {
+      name: 'Business',
+      tier: 'BUSINESS',
+      price: 189.9,
+      interval: 'MONTHLY',
+      maxBarbers: 15,
+      maxMonthlyAppointments: 5000,
+      hasWhatsappAutomation: true,
+      hasAdvancedAnalytics: true,
+      hasMultiUnit: true,
+      featuresJson: JSON.stringify(['Até 15 Barbeiros', 'Multi-Unidades', 'Analytics Avançado', 'Automação WhatsApp VIP']),
     },
   });
 
@@ -66,8 +104,18 @@ async function main() {
     },
   });
 
-  // 6. Users (Owners)
+  // 6. Users (Super Admin & Owners)
   const passwordHash = await bcrypt.hash('senha123barber', 10);
+  const adminPasswordHash = await bcrypt.hash('senha123admin', 10);
+
+  const superAdmin = await prisma.user.create({
+    data: {
+      name: 'Super Administrador BarberFlow',
+      email: 'admin@barberflow.com',
+      passwordHash: adminPasswordHash,
+      role: 'SUPER_ADMIN',
+    },
+  });
 
   const ownerImperial = await prisma.user.create({
     data: {

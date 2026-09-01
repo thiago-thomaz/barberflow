@@ -26,6 +26,7 @@ model User {
   updatedAt    DateTime    @updatedAt
 
   auditLogs          AuditLog[]
+  adminAuditLogs     AdminAuditLog[]
   passwordResetTokens PasswordResetToken[]
   educationProgress   EducationProgress[]
   educationFavorites  EducationFavorite[]
@@ -84,7 +85,9 @@ model Barbershop {
   businessHours  BusinessHours[]
   webhooks       Webhook[]
   auditLogs      AuditLog[]
+  adminAuditLogs AdminAuditLog[]
   subscriptions  Subscription[]
+  saasPayments   SaaSPayment[]
   events         AutomationEvent[]
   notifications  Notification[]
   subscriptionEvents SubscriptionEvent[]
@@ -337,6 +340,8 @@ model Subscription {
   externalSubscriptionId String?
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
+
+  saasPayments         SaaSPayment[]
 
   @@index([barbershopId])
   @@index([status])
@@ -925,5 +930,70 @@ model VisagismMetric {
   @@index([eventName])
   @@index([createdAt])
 }
+
+// ----------------------------------------------------
+// SaaS Administration & Platform Control (Fase 20)
+// ----------------------------------------------------
+
+model AdminAuditLog {
+  id           String      @id @default(cuid())
+  adminUserId  String
+  adminUser    User        @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  action       String      // LOGIN, LOGOUT, SUSPEND_TENANT, REACTIVATE_TENANT, CHANGE_PLAN, UPDATE_USER, CREATE_PLAN, UPDATE_PLAN, RECORD_PAYMENT, IMPERSONATE, CONFIG_UPDATE
+  entity       String      // Barbershop, User, Plan, Subscription, SaaSPayment, SaaSSetting
+  entityId     String?
+  tenantId     String?
+  tenant       Barbershop? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  metadata     String?     // JSON metadata (never containing passwords, tokens or secrets)
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime    @default(now())
+
+  @@index([adminUserId])
+  @@index([tenantId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model SaaSPayment {
+  id              String        @id @default(cuid())
+  barbershopId    String
+  barbershop      Barbershop    @relation(fields: [barbershopId], references: [id], onDelete: Cascade)
+  subscriptionId  String?
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  amount          Float
+  status          String        @default("PAID") // PAID, PENDING, FAILED, REFUNDED, CANCELLED
+  method          String        @default("PIX") // PIX, CREDIT_CARD, BOLETO, BANK_TRANSFER, MANUAL
+  paidAt          DateTime?
+  dueDate         DateTime?
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  reference       String?       // Invoice / Receipt ID
+  notes           String?
+  metadata        String?       // JSON metadata
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([barbershopId])
+  @@index([status])
+  @@index([paidAt])
+  @@index([createdAt])
+}
+
+model SaaSSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  category    String   @default("GENERAL") // GENERAL, OPERATIONAL, SECURITY, NOTIFICATIONS, INTEGRATIONS
+  description String?
+  isEncrypted Boolean  @default(false)
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+  @@index([category])
+}
+
 
 

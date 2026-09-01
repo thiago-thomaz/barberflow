@@ -29,11 +29,9 @@ export async function GET(req: NextRequest) {
       saasPayments,
       totalCustomers,
       totalAppointments,
-      completedAppointments,
-      totalWhatsAppMessages,
-      totalVisagismSessions,
-      totalAcademyDiagnostics,
-      plans,
+      totalUsers,
+      recentAuditLogs,
+      recentBarbershops,
     ] = await Promise.all([
       prisma.barbershop.count(),
       prisma.barbershop.count({ where: { isActive: true } }),
@@ -47,84 +45,75 @@ export async function GET(req: NextRequest) {
       prisma.saaSPayment.findMany({ where: { status: 'PAID' } }),
       prisma.customer.count({ where: { deletedAt: null } }),
       prisma.appointment.count(),
-      prisma.appointment.count({ where: { status: 'CONCLUIDO' } }),
-      prisma.whatsappMessage.count(),
-      prisma.visagismSession.count(),
-      prisma.academyDiagnostic.count(),
-      prisma.plan.findMany({ include: { _count: { select: { subscriptions: true } } } }),
+      prisma.user.count(),
+      prisma.adminAuditLog.findMany({
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+        include: { adminUser: { select: { name: true, email: true } }, tenant: { select: { name: true, slug: true } } },
+      }),
+      prisma.barbershop.findMany({
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: { subscriptions: { include: { plan: true } }, _count: { select: { appointments: true, customers: true, barbers: true } } },
+      }),
     ]);
 
+    // Subscriptions aggregation
     const activeSubs = subscriptions.filter((s) => s.status === 'ACTIVE');
     const trialSubs = subscriptions.filter((s) => s.status === 'TRIALING');
     const pastDueSubs = subscriptions.filter((s) => s.status === 'PAST_DUE');
     const cancelledSubs = subscriptions.filter((s) => s.status === 'CANCELLED');
     const expiredSubs = subscriptions.filter((s) => s.status === 'EXPIRED');
 
-    // Mathematical formula calculations
+    // Revenue calculations
     const mrr = activeSubs.reduce((acc, s) => acc + (s.plan?.price || 0), 0);
     const arr = mrr * 12;
     const totalCollectedRevenue = saasPayments.reduce((acc, p) => acc + p.amount, 0);
-    const pastDueAmount = pastDueSubs.reduce((acc, s) => acc + (s.plan?.price || 0), 0);
 
+    const pastDueAmount = pastDueSubs.reduce((acc, s) => acc + (s.plan?.price || 0), 0);
     const arpu = activeSubs.length > 0 ? mrr / activeSubs.length : 0;
     const churnRate = subscriptions.length > 0 ? (cancelledSubs.length / subscriptions.length) * 100 : 0;
     const retentionRate = subscriptions.length > 0 ? (activeSubs.length / subscriptions.length) * 100 : 0;
-    const defaultRate = (activeSubs.length + pastDueSubs.length) > 0 ? (pastDueSubs.length / (activeSubs.length + pastDueSubs.length)) * 100 : 0;
-
-    const monthlyChurnDecimal = churnRate / 100;
-    const ltv = monthlyChurnDecimal > 0 ? arpu / monthlyChurnDecimal : arpu * 24;
-
-    // Plan distribution
-    const planDistribution = plans.map((p) => ({
-      id: p.id,
-      name: p.name,
-      tier: p.tier,
-      price: p.price,
-      subscribersCount: p._count.subscriptions,
-      estimatedMrr: p._count.subscriptions * p.price,
-    }));
 
     return NextResponse.json({
       success: true,
       data: {
+        tenants: {
+          total: totalTenants,
+          active: activeTenants,
+          inactive: inactiveTenants,
+          growth: {
+            today: newTenantsToday,
+            sevenDays: newTenants7d,
+            thirtyDays: newTenants30d,
+            thisMonth: newTenantsThisMonth,
+            lastMonth: newTenantsLastMonth,
+          },
+        },
         financial: {
-          mrr: Math.round(mrr * 100) / 100,
-          arr: Math.round(arr * 100) / 100,
-          arpu: Math.round(arpu * 100) / 100,
-          ltv: Math.round(ltv * 100) / 100,
-          totalCollectedRevenue: Math.round(totalCollectedRevenue * 100) / 100,
-          pastDueAmount: Math.round(pastDueAmount * 100) / 100,
-          defaultRate: Math.round(defaultRate * 10) / 10,
+          mrr,
+          arr,
+          arpu,
+          totalCollectedRevenue,
+          pastDueAmount,
         },
-        acquisition: {
-          totalTenants,
-          activeTenants,
-          inactiveTenants,
-          newToday: newTenantsToday,
-          new7d: newTenants7d,
-          new30d: newTenants30d,
-          newThisMonth: newTenantsThisMonth,
-          newLastMonth: newTenantsLastMonth,
-        },
-        retention: {
+        subscriptions: {
+          total: subscriptions.length,
+          active: activeSubs.length,
+          trialing: trialSubs.length,
+          pastDue: pastDueSubs.length,
+          cancelled: cancelledSubs.length,
+          expired: expiredSubs.length,
           churnRate: Math.round(churnRate * 10) / 10,
           retentionRate: Math.round(retentionRate * 10) / 10,
-          activeCount: activeSubs.length,
-          trialCount: trialSubs.length,
-          pastDueCount: pastDueSubs.length,
-          cancelledCount: cancelledSubs.length,
-          expiredCount: expiredSubs.length,
         },
-        engagement: {
+        operation: {
           totalCustomers,
           totalAppointments,
-          completedAppointments,
-          completionRate: totalAppointments > 0 ? Math.round((completedAppointments / totalAppointments) * 100) : 0,
-          totalWhatsAppMessages,
-          totalVisagismSessions,
-          totalAcademyDiagnostics,
+          totalUsers,
         },
-        planDistribution,
+        recentAuditLogs,
+        recentBarbershops,
       },
     });
   } catch (error: any) {
@@ -134,7 +123,7 @@ export async function GET(req: NextRequest) {
     if (error.message === 'FORBIDDEN') {
       return NextResponse.json({ error: 'Acesso restrito ao Super Admin' }, { status: 403 });
     }
-    console.error('[AdminMetrics API Error]:', error);
-    return NextResponse.json({ error: 'Erro ao apurar métricas do SaaS' }, { status: 500 });
+    console.error('[AdminDashboard API Error]:', error);
+    return NextResponse.json({ error: 'Erro ao carregar dados do dashboard executivo' }, { status: 500 });
   }
 }

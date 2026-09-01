@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { comparePassword, signToken } from '@/lib/auth';
+import { comparePassword, signToken, logAdminAuditEvent } from '@/lib/auth';
 import { logAuditEvent } from '@/lib/tenant';
 
 export async function POST(req: NextRequest) {
@@ -33,6 +33,16 @@ export async function POST(req: NextRequest) {
       barbershopName: user.barbershop?.name,
       barbershopSlug: user.barbershop?.slug,
     });
+
+    if (user.role === 'SUPER_ADMIN') {
+      await logAdminAuditEvent({
+        adminUserId: user.id,
+        action: 'LOGIN',
+        entity: 'User',
+        entityId: user.id,
+        req,
+      });
+    }
 
     if (user.barbershopId) {
       await logAuditEvent({
