@@ -1,6 +1,29 @@
-// BarberFlow - Replicate Face Inpainting & Swap Provider
+import fs from 'fs';
+import path from 'path';
 
-const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
+function getReplicateToken(): string {
+  if (process.env.REPLICATE_API_TOKEN) return process.env.REPLICATE_API_TOKEN;
+  try {
+    const envPaths = [
+      path.join(process.cwd(), '.env'),
+      path.join(process.cwd(), '.env.local'),
+      '/app/.env',
+      '/data/coolify/applications/7ho00pvb569n5m3jgee0fnsi/.env',
+    ];
+    for (const p of envPaths) {
+      if (fs.existsSync(p)) {
+        const content = fs.readFileSync(p, 'utf-8');
+        const match = content.match(/^REPLICATE_API_TOKEN=(.+)$/m);
+        if (match) {
+          let val = match[1].trim();
+          if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+          if (val) return val;
+        }
+      }
+    }
+  } catch (e) {}
+  return '';
+}
 
 export interface GeneratePreviewParams {
   clientPhotoBuffer: Buffer;
@@ -13,7 +36,7 @@ export async function generateClientVisualPreview({
   clientPhotoMimeType,
   targetHaircutImageUrl,
 }: GeneratePreviewParams): Promise<string | null> {
-  const token = process.env.REPLICATE_API_TOKEN || REPLICATE_API_TOKEN;
+  const token = getReplicateToken();
   if (!token) {
     console.warn('REPLICATE_API_TOKEN não configurado.');
     return null;

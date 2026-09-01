@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import type {
   VisagismAIProvider,
   VisagismProfileInput,
@@ -7,7 +9,29 @@ import type {
 } from '../types.ts';
 import { DeterministicVisagismProvider } from './deterministic.ts';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+function getGeminiApiKey(): string {
+  if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+  try {
+    const envPaths = [
+      path.join(process.cwd(), '.env'),
+      path.join(process.cwd(), '.env.local'),
+      '/app/.env',
+      '/data/coolify/applications/7ho00pvb569n5m3jgee0fnsi/.env',
+    ];
+    for (const p of envPaths) {
+      if (fs.existsSync(p)) {
+        const content = fs.readFileSync(p, 'utf-8');
+        const match = content.match(/^GEMINI_API_KEY=(.+)$/m);
+        if (match) {
+          let val = match[1].trim();
+          if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+          if (val) return val;
+        }
+      }
+    }
+  } catch (e) {}
+  return '';
+}
 
 export class GoogleGeminiVisagismProvider implements VisagismAIProvider {
   name = 'GOOGLE_GEMINI_VISION';
@@ -21,7 +45,8 @@ export class GoogleGeminiVisagismProvider implements VisagismAIProvider {
     photoBuffer: Buffer,
     mimeType: string
   ): Promise<{ detectedFaceShape?: FaceShape; notes?: string }> {
-    if (!GEMINI_API_KEY) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
       return { notes: 'Chave Gemini não configurada, utilizando regras locais.' };
     }
 
