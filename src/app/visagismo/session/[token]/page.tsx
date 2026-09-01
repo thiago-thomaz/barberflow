@@ -184,24 +184,84 @@ export default function VisagismoSessionPage() {
     if (token) loadSession();
   }, [token]);
 
-  // Manipulação de Seleção de Foto (Câmera ou Galeria)
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Função auxiliar para comprimir e normalizar a foto no celular antes do upload
+  const compressAndNormalizeImage = async (
+    file: File,
+    maxWidth = 1024,
+    maxHeight = 1024,
+    quality = 0.85
+  ): Promise<{ blob: Blob; dataUrl: string }> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Falha ao ler arquivo de foto'));
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Falha ao decodificar imagem'));
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxWidth || height > maxHeight) {
+            if (width > height) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            } else {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Falha ao processar canvas'));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve({ blob, dataUrl });
+              } else {
+                reject(new Error('Falha ao comprimir imagem'));
+              }
+            },
+            'image/jpeg',
+            quality
+          );
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Manipulação de Seleção de Foto (Câmera ou Galeria com Compressão Automática)
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('A foto deve ter no máximo 5MB.');
-      return;
+    try {
+      const { blob, dataUrl } = await compressAndNormalizeImage(file, 1024, 1024, 0.85);
+      const normalizedFile = new File([blob], 'selfie.jpg', { type: 'image/jpeg' });
+      setPhotoFile(normalizedFile);
+      setPhotoPreview(dataUrl);
+      setIsPhotoConfirmed(false);
+    } catch (err: any) {
+      console.warn('Fallback para imagem original:', err.message);
+      setPhotoFile(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setPhotoPreview(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+      setIsPhotoConfirmed(false);
     }
-
-    setPhotoFile(file);
-    setIsPhotoConfirmed(false); // Aguarda confirmação do usuário
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setPhotoPreview(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
   };
 
   // Upload definitivo da foto após confirmação do usuário
@@ -216,39 +276,53 @@ export default function VisagismoSessionPage() {
       return;
     }
 
-    if (photoFile) {
-      setUploadingPhoto(true);
-      try {
+    setUploadingPhoto(true);
+    try {
+      let res: Response;
+
+      // Tentativa 1: FormData com o arquivo comprimido
+      if (photoFile) {
         const formData = new FormData();
         formData.append('photo', photoFile);
         formData.append('consent', 'true');
 
-        const res = await fetch(`/api/visagismo/session/${token}/photo`, {
+        res = await fetch(`/api/visagismo/session/${token}/photo`, {
           method: 'POST',
           body: formData,
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Erro no upload da foto');
-
-        setIsPhotoConfirmed(true);
-        if (data.detectedFaceShape) {
-          setFaceShape(data.detectedFaceShape);
-          setAiDetectedShape(data.detectedFaceShape);
-        }
-        if (data.notes) {
-          setAiNotes(data.notes);
-        }
-      } catch (err: any) {
-        alert(err.message);
-        setUploadingPhoto(false);
-        return;
-      } finally {
-        setUploadingPhoto(false);
+      } else {
+        // Tentativa 2: JSON com payload Base64
+        res = await fetch(`/api/visagismo/session/${token}/photo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            base64: photoPreview,
+            consent: true,
+          }),
+        });
       }
-    }
 
-    setIsPhotoConfirmed(true);
-    setStep(3);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro no upload da foto');
+
+      setIsPhotoConfirmed(true);
+      if (data.detectedFaceShape) {
+        setFaceShape(data.detectedFaceShape);
+        setAiDetectedShape(data.detectedFaceShape);
+      }
+      if (data.notes) {
+        setAiNotes(data.notes);
+      }
+
+      setStep(3);
+    } catch (err: any) {
+      console.error('Erro no upload da foto:', err);
+      // Fallback gracioso: permite continuar preenchendo o questionário mesmo se o upload falhar temporariamente
+      setIsPhotoConfirmed(true);
+      setStep(3);
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   // Exclusão de foto (LGPD)
