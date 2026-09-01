@@ -65,6 +65,13 @@ export function AdminShell({
     );
   }
 
+  const handleAdminLoginClick = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    router.push('/login');
+  };
+
   if (!isAuthorized) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#07090E] p-4">
@@ -84,7 +91,7 @@ export function AdminShell({
               Ir para Minha Barbearia
             </button>
             <button
-              onClick={() => router.push('/login')}
+              onClick={handleAdminLoginClick}
               className="flex-1 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-xs font-bold text-black transition-colors shadow-lg shadow-amber-500/20"
             >
               Fazer Login como Admin

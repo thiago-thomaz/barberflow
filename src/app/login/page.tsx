@@ -1,16 +1,39 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Scissors, Lock, Mail, ArrowRight, Sparkles } from 'lucide-react';
+import { getPostLoginRedirect } from '@/lib/auth-client';
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    async function checkExistingAuth() {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.authenticated && data.user) {
+            const redirectUrl = getPostLoginRedirect(data.user);
+            router.push(redirectUrl);
+            return;
+          }
+        }
+      } catch (err) {
+        // Silently continue to login form
+      } finally {
+        setCheckingSession(false);
+      }
+    }
+    checkExistingAuth();
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +52,8 @@ export default function LoginPage() {
         throw new Error(data.error || 'Falha ao autenticar');
       }
 
-      router.push('/dashboard');
+      const redirectUrl = getPostLoginRedirect(data.user);
+      router.push(redirectUrl);
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -51,7 +75,8 @@ export default function LoginPage() {
         throw new Error(data.error || 'Ambiente demo indisponível');
       }
 
-      router.push('/dashboard');
+      const redirectUrl = getPostLoginRedirect(data.user);
+      router.push(redirectUrl);
       router.refresh();
     } catch (err: any) {
       setError(err.message);
