@@ -58,7 +58,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Pouco',
     suggestedServiceKeywords: ['corte', 'degrade', 'fade', 'social'],
     stylingTips: 'Manutenção a cada 15 a 20 dias para manter a transição limpa.',
-    referenceImageUrl: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=800&q=80',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'mid-fade',
@@ -72,7 +72,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Medio',
     suggestedServiceKeywords: ['corte', 'degrade', 'fade', 'moderno'],
     stylingTips: 'Excelente para quem quer presença marcante sem perder elegância.',
-    referenceImageUrl: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'high-fade',
@@ -86,7 +86,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Radical',
     suggestedServiceKeywords: ['corte', 'high fade', 'degrade'],
     stylingTips: 'Exige manutenção frequente (10 a 15 dias) para preservar o contraste nítido.',
-    referenceImageUrl: 'https://images.unsplash.com/photo-1517832606299-7ae9b720a186?auto=format&fit=crop&w=800&q=80',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'skin-fade',
@@ -100,7 +100,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Radical',
     suggestedServiceKeywords: ['navalhado', 'corte', 'fade'],
     stylingTips: 'Finalize com loção pós-barba nas laterais e pomada matte no topo.',
-    referenceImageUrl: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=800&q=80',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'taper-fade',
@@ -114,7 +114,7 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     changeImpact: 'Pouco',
     suggestedServiceKeywords: ['corte', 'social', 'classico', 'taper'],
     stylingTips: 'Perfeito para ambientes formais e quem prefere maior intervalo entre cortes.',
-    referenceImageUrl: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=800&q=80',
+    referenceImageUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'buzz-cut',

@@ -32,20 +32,36 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: 'Sessão não encontrada ou expirada' }, { status: 404 });
     }
 
-    // Busca foto do cliente salva no storage
+    // Busca foto do cliente salva no storage ou enviada pelo frontend
+    let clientBuffer: Buffer | null = null;
+    let clientMime = 'image/jpeg';
+
     const photoData = await getVisagismPhotoBuffer(session.id);
-    if (!photoData || !photoData.buffer) {
+    if (photoData && photoData.buffer) {
+      clientBuffer = photoData.buffer;
+      clientMime = photoData.mimeType;
+    } else if (body.clientPhotoBase64 && typeof body.clientPhotoBase64 === 'string') {
+      const match = body.clientPhotoBase64.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        clientMime = match[1];
+        clientBuffer = Buffer.from(match[2], 'base64');
+      } else {
+        clientBuffer = Buffer.from(body.clientPhotoBase64, 'base64');
+      }
+    }
+
+    if (!clientBuffer) {
       return NextResponse.json({
         success: false,
-        message: 'Cliente não enviou foto original para montagem de IA.',
+        message: 'Foto original do cliente não encontrada para montagem de IA.',
         previewUrl: null,
       });
     }
 
     // Gera preview usando Replicate
     const generatedUrl = await generateClientVisualPreview({
-      clientPhotoBuffer: photoData.buffer,
-      clientPhotoMimeType: photoData.mimeType,
+      clientPhotoBuffer: clientBuffer,
+      clientPhotoMimeType: clientMime,
       targetHaircutImageUrl: targetImageUrl,
     });
 

@@ -86,12 +86,32 @@ export default function VisagismoSessionPage() {
 
     setGeneratingPreview(true);
     try {
+      let base64Payload: string | undefined = undefined;
+      if (photoPreview.startsWith('data:')) {
+        base64Payload = photoPreview;
+      } else {
+        try {
+          const photoBlobRes = await fetch(photoPreview);
+          if (photoBlobRes.ok) {
+            const blob = await photoBlobRes.blob();
+            base64Payload = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          }
+        } catch (e) {
+          // fallback
+        }
+      }
+
       const res = await fetch(`/api/visagismo/session/${token}/generate-preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetImageUrl: targetRec.referenceImageUrl,
           haircutName: targetRec.haircutName,
+          clientPhotoBase64: base64Payload,
         }),
       });
       const data = await res.json();

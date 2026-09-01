@@ -22,25 +22,38 @@ export async function generateClientVisualPreview({
   try {
     const base64Photo = `data:${clientPhotoMimeType || 'image/jpeg'};base64,${clientPhotoBuffer.toString('base64')}`;
 
-    const res = await fetch('https://api.replicate.com/v1/predictions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        Prefer: 'wait',
-      },
-      body: JSON.stringify({
-        version: '9a4298548422074c3f57258c5d544497314ae4112df80d116f0d2109e843d20d',
-        input: {
-          target_image: targetHaircutImageUrl,
-          swap_image: base64Photo,
-        },
-      }),
-    });
+    let res: Response | null = null;
+    let retries = 0;
 
-    if (!res.ok) {
-      const errBody = await res.text();
-      console.warn('Replicate API error status:', res.status, errBody);
+    // Retry com backoff se houver concorrência (429)
+    while (retries < 4) {
+      res = await fetch('https://api.replicate.com/v1/predictions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Prefer: 'wait',
+        },
+        body: JSON.stringify({
+          version: '9a4298548422074c3f57258c5d544497314ae4112df80d116f0d2109e843d20d',
+          input: {
+            target_image: targetHaircutImageUrl,
+            swap_image: base64Photo,
+          },
+        }),
+      });
+
+      if (res.status === 429) {
+        retries++;
+        await new Promise((r) => setTimeout(r, 2000 * retries));
+        continue;
+      }
+      break;
+    }
+
+    if (!res || !res.ok) {
+      const errBody = res ? await res.text() : 'No response';
+      console.warn('Replicate API error status:', res?.status, errBody);
       return null;
     }
 
