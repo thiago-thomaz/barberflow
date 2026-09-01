@@ -63,8 +63,14 @@ export async function POST(
     const cleanPhone = barberPhone.replace(/\D/g, '');
     const whatsappUrl = `https://wa.me/${cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`}?text=${encodeURIComponent(whatsappMessage)}`;
 
-    // URL de agendamento público
-    const bookingUrl = `/b/${session.barbershop.slug}`;
+    // URL de agendamento público com preservação do visual escolhido
+    const queryParams = new URLSearchParams({
+      visagism: session.publicToken,
+      corte: haircutName || '',
+      estilo: haircutStyle || '',
+      barba: beardName || '',
+    });
+    const bookingUrl = `/b/${session.barbershop.slug}?${queryParams.toString()}`;
 
     return NextResponse.json({
       success: true,

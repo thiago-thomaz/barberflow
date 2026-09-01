@@ -37,12 +37,21 @@ export async function POST(req: NextRequest) {
 
       const from = message.from;
       let text = '';
+      let mediaUrl = '';
+      let mediaMimeType = '';
+      let mediaType: 'text' | 'image' | 'audio' | 'document' = 'text';
+
       if (message.type === 'text') {
         text = message.text?.body || '';
       } else if (message.type === 'interactive') {
         text = message.interactive?.button_reply?.id || message.interactive?.list_reply?.id || '';
       } else if (message.type === 'button') {
         text = message.button?.text || '';
+      } else if (message.type === 'image') {
+        mediaType = 'image';
+        mediaUrl = message.image?.link || message.image?.url || '';
+        mediaMimeType = message.image?.mime_type || 'image/jpeg';
+        text = message.image?.caption || '[FOTO]';
       }
 
       const tenantPhoneId = metadata?.phone_number_id;
@@ -50,32 +59,60 @@ export async function POST(req: NextRequest) {
 
       const result = await processWhatsAppMessage({
         from,
-        text,
+        text: text || '[FOTO]',
         tenantSlugOrId: tenantPhoneId,
         receiverPhone,
         messageId: message.id,
+        mediaUrl: mediaUrl || undefined,
+        mediaMimeType: mediaMimeType || undefined,
+        mediaType,
       });
 
       return NextResponse.json({ success: true, result });
     }
 
-    // 2. Direct format (n8n, Simulator, or Custom Gateway)
-    const { from, text, tenantSlug, barbershopId, receiverPhone, messageId, senderName } = body;
+    // 2. Direct format (n8n, WAHA, Simulator, or Custom Gateway)
+    const {
+      from,
+      text,
+      tenantSlug,
+      barbershopId,
+      receiverPhone,
+      messageId,
+      senderName,
+      mediaUrl,
+      mediaBase64,
+      image,
+      media,
+      mimeType,
+      mediaMimeType,
+      mediaType,
+    } = body;
 
-    if (!from || !text) {
+    const resolvedMediaBase64 = mediaBase64 || (typeof image === 'string' && image.startsWith('data:') ? image : undefined);
+    const resolvedMediaUrl = mediaUrl || (typeof image === 'string' && image.startsWith('http') ? image : undefined) || (typeof media === 'string' && media.startsWith('http') ? media : undefined);
+    const resolvedMimeType = mediaMimeType || mimeType || (resolvedMediaBase64?.startsWith('data:') ? resolvedMediaBase64.split(';')[0].replace('data:', '') : undefined);
+
+    const messageText = text || body.caption || (resolvedMediaBase64 || resolvedMediaUrl ? '[FOTO]' : '');
+
+    if (!from || !messageText) {
       return NextResponse.json(
-        { error: 'Campos obrigatórios: from, text' },
+        { error: 'Campos obrigatórios: from e text (ou imagem)' },
         { status: 400 }
       );
     }
 
     const result = await processWhatsAppMessage({
       from,
-      text,
+      text: messageText,
       tenantSlugOrId: tenantSlug || barbershopId,
       receiverPhone: receiverPhone,
       messageId,
       senderName,
+      mediaUrl: resolvedMediaUrl,
+      mediaBase64: resolvedMediaBase64,
+      mediaMimeType: resolvedMimeType,
+      mediaType: mediaType || (resolvedMediaBase64 || resolvedMediaUrl ? 'image' : 'text'),
     });
 
     return NextResponse.json({

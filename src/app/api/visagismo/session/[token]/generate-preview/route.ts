@@ -32,6 +32,23 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: 'Sessão não encontrada ou expirada' }, { status: 404 });
     }
 
+    // Controle de custo / limite por sessão (default 3)
+    const MAX_GENERATIONS = parseInt(process.env.VISAGISM_MAX_GENERATIONS_PER_SESSION || '3', 10);
+    const existingGenerations = await prisma.visagismMetric.count({
+      where: {
+        sessionId: session.id,
+        eventName: 'preview_generated',
+      },
+    });
+
+    if (existingGenerations >= MAX_GENERATIONS) {
+      return NextResponse.json({
+        success: false,
+        message: `Você já atingiu o limite de ${MAX_GENERATIONS} simulações gratuitas para esta sessão.`,
+        previewUrl: null,
+      });
+    }
+
     // Busca foto do cliente salva no storage ou enviada pelo frontend
     let clientBuffer: Buffer | null = null;
     let clientMime = 'image/jpeg';
@@ -72,6 +89,16 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         previewUrl: null,
       });
     }
+
+    // Registra métrica de geração
+    await prisma.visagismMetric.create({
+      data: {
+        barbershopId: session.barbershopId,
+        sessionId: session.id,
+        eventName: 'preview_generated',
+        metadata: JSON.stringify({ haircutName, targetImageUrl }),
+      },
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

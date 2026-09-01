@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { prisma } from '../prisma.ts';
 import { getVisagismProvider } from './provider.ts';
-import type { VisagismProfileInput, VisagismEvaluationResponse } from './types.ts';
+import type { VisagismProfileInput, VisagismEvaluationResponse, FaceShape } from './types.ts';
 
 export const VISAGISM_SESSION_TTL_HOURS = 24;
 export const VISAGISM_STORAGE_DIR = path.join(process.cwd(), 'storage', 'visagismo');
@@ -338,6 +338,49 @@ export async function evaluateVisagismSession(
   });
 
   return evaluation;
+}
+
+/**
+  * Processa selfie enviada via WhatsApp: analisa com Gemini Vision e gera Top 3 do catálogo
+  */
+export async function processVisagismFromWhatsAppSelfie(params: {
+  sessionId: string;
+  barbershopId: string;
+  publicToken: string;
+  fileBuffer: Buffer;
+  mimeType: string;
+}) {
+  const { sessionId, barbershopId, publicToken, fileBuffer, mimeType } = params;
+
+  const photoResult = await saveVisagismPhoto({
+    sessionId,
+    fileBuffer,
+    mimeType,
+  });
+
+  const rawShape = photoResult.detectedFaceShape || 'Oval';
+  const validShapes = ['Oval', 'Quadrado', 'Redondo', 'Retangular', 'Triangular', 'Coracao'];
+  const faceShape = validShapes.find(s => s.toLowerCase() === rawShape.toLowerCase()) || 'Oval';
+
+  const evaluation = await evaluateVisagismSession(
+    { id: sessionId, barbershopId, publicToken },
+    {
+      objective: 'Estilo completo',
+      style: 'Moderno',
+      changeLevel: 'Medio',
+      maintenanceLevel: 'Medio',
+      hairLength: 'Sim',
+      faceShape: faceShape as FaceShape,
+    }
+  );
+
+  return {
+    success: true,
+    detectedFaceShape: faceShape,
+    notes: photoResult.notes,
+    recommendations: evaluation.recommendations,
+    publicToken,
+  };
 }
 
 /**

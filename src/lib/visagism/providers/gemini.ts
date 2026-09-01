@@ -52,7 +52,7 @@ export class GoogleGeminiVisagismProvider implements VisagismAIProvider {
 
     try {
       const base64Data = photoBuffer.toString('base64');
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const prompt = `Você é um mestre visagista e barbeiro profissional.
 Analise a foto deste cliente com atenção aos traços anatômicos:
@@ -116,14 +116,15 @@ Responda ESTRITAMENTE em formato JSON:
     // 1. Gera a base estruturada das 3 recomendações
     const baseEvaluation = await this.fallbackProvider.evaluateProfile(profile, tenantServices);
 
-    if (!GEMINI_API_KEY) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
       return baseEvaluation;
     }
 
     // 2. Aprimora os textos com IA do Google Gemini
     try {
       const topCut = baseEvaluation.recommendations[0]?.haircutName;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const prompt = `Você é o Consultor de Visagismo do BarberFlow.
 O cliente possui rosto ${profile.faceShape}, estilo ${profile.style}, objetivo ${profile.objective} e manutenção ${profile.maintenanceLevel}.

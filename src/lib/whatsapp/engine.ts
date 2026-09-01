@@ -4,7 +4,7 @@ import { scheduleAppointmentReminders, cancelAppointmentReminders } from './remi
 import { generateGoogleCalendarUrl } from '../calendar';
 import { BRAZIL_TIMEZONE, formatBrazilDate, formatBrazilTime } from '../timezone';
 import { publishEvent } from '../events';
-import { createOrGetVisagismSession } from '../visagism/engine.ts';
+import { createOrGetVisagismSession, processVisagismFromWhatsAppSelfie } from '../visagism/engine.ts';
 
 export const SESSION_TTL_MINUTES = 30;
 
@@ -98,6 +98,11 @@ export interface WhatsAppIncomingMessage {
   receiverPhone?: string;
   messageId?: string;
   senderName?: string;
+  mediaUrl?: string;
+  mediaBase64?: string;
+  mediaMimeType?: string;
+  mediaBuffer?: Buffer;
+  mediaType?: 'text' | 'image' | 'audio' | 'document';
 }
 
 export interface EngineResult {
@@ -670,6 +675,8 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     'menu', 'oi', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'comecar', 'inicio', 'iniciar', 'ajuda', 'hello', 'hi'
   ].includes(normalized);
 
+  const isVisagismEnabled = process.env.VISAGISM_WHATSAPP_ENABLED !== 'false';
+
   if (isGreetingOrMenu) {
     session = await prisma.whatsappSession.update({
       where: { id: session.id },
@@ -677,7 +684,8 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     });
 
     const expiredNotice = isExpired ? '_(Seu atendimento anterior expirou)_\n\n' : '';
-    const welcome = `${expiredNotice}Olá! 👋 Sou o assistente virtual da *${shop.name}*.\n\nComo posso te ajudar hoje?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n6️⃣ *✂️ Mudar meu visual (Visagismo)*\n0️⃣ *Encerrar atendimento*\n\n_Envie o número da opção ou digite o que deseja (ex: "Quero cortar cabelo" ou "Mudar visual")._`;
+    const visagismOption = isVisagismEnabled ? '6️⃣ *✨ Visagismo — Mude de Visual*\n' : '';
+    const welcome = `${expiredNotice}Olá! 👋 Sou o assistente virtual da *${shop.name}*.\n\nComo posso te ajudar hoje?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n${visagismOption}0️⃣ *Encerrar atendimento*\n\n_Envie o número da opção ou digite o que deseja (ex: "Quero cortar cabelo" ou "Mudar de visual")._`;
 
     await getWhatsAppProvider().sendText({ to: phone, text: welcome, tenantId: shop.id });
     return { reply: welcome, state: 'IDLE' };
@@ -733,6 +741,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       normalized.includes('novo visual') ||
       normalized.includes('mudar meu visual') ||
       normalized.includes('mude meu visual') ||
+      normalized.includes('mude de visual') ||
       normalized.includes('outro corte') ||
       normalized.includes('experimentar corte') ||
       normalized.includes('qual corte combina') ||
@@ -745,14 +754,17 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       reply = `Atendimento encerrado com sucesso! 😊\n\nQuando quiser agendar ou consultar horários na *${shop.name}*, basta enviar um *Oi* ou *MENU* a qualquer momento.\n\n💈 Agradecemos seu contato e até breve!`;
       nextState = 'IDLE';
       context = {};
-    } else if (isOption6) {
+    } else if (isOption6 && isVisagismEnabled) {
       const visagismSession = await createOrGetVisagismSession({
         barbershopId: shop.id,
         phone,
       });
-      const visagismUrl = `https://barber.projetosunion.cloud/visagismo/session/${visagismSession.publicToken}`;
-      reply = `Quer descobrir um novo visual? ✂️\n\nEnvie uma foto sua e veja sugestões de cortes, barbas, estilos e cores que combinam com você.\n\n🔗 *Acesse sua experiência de Visagismo:*\n${visagismUrl}\n\n_(Link seguro e válido por 24 horas. Sua foto é privada e você pode excluí-la quando quiser)._\n\nEnvie *MENU* para voltar ao menu principal.`;
-      nextState = 'IDLE';
+      reply = `✨ *Vamos mudar seu visual!*\n\nVou analisar sua foto e sugerir cortes, estilos de cabelo e barba que combinam com você.\n\n📸 *Envie uma selfie de frente, com boa iluminação e sem filtros.*\n_Não precisa ser uma foto profissional._\n\n_Ou envie 0 para voltar ao menu principal._`;
+      nextState = 'VISAGISM_WAITING_IMAGE';
+      context = {
+        visagismSessionId: visagismSession.id,
+        visagismPublicToken: visagismSession.publicToken,
+      };
     } else if (isOption1) {
       nextState = 'SELECTING_SERVICE';
       context = {};
@@ -804,19 +816,19 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
       });
 
       if (activeApps.length === 0) {
-        reply = `Você não possui horários agendados para cancelar no momento. 😊\n\nEnvie *MENU* para ver as opções.`;
+        reply = `Você não possui agendamentos ativos para cancelar na *${shop.name}*. 👍\n\nEnvie *MENU* para ver as opções disponíveis.`;
       } else if (activeApps.length === 1) {
         const app = activeApps[0];
         context.cancellingAppointmentId = app.id;
         nextState = 'CANCELLING';
-        reply = `Encontrei seu agendamento:\n\n✂️ *${app.service?.name}*\n📅 *${formatBrazilDate(app.scheduledAt)} às ${formatBrazilTime(app.scheduledAt)}*\n👤 *${app.barber?.name}*\n\nTem certeza que deseja cancelar?\n\n1️⃣ *Sim, confirmar cancelamento*\n2️⃣ *Não, manter horário*\n0️⃣ *Voltar ao menu*`;
+        reply = `Confirma o cancelamento do seu agendamento de *${app.service?.name}* com *${app.barber?.name}* no dia *${formatBrazilDate(app.scheduledAt)} às ${formatBrazilTime(app.scheduledAt)}*?\n\n1️⃣ *Sim, confirmar cancelamento*\n2️⃣ *Não, manter horário*\n0️⃣ *Voltar ao menu*`;
       } else {
         context.availableCancelApps = activeApps.map((a) => a.id);
         nextState = 'CANCELLING';
         const list = activeApps
-          .map((a, i) => `${formatOptionNumber(i + 1)} ${a.service?.name} - ${formatBrazilDate(a.scheduledAt)} às ${formatBrazilTime(a.scheduledAt)} (${a.barber?.name})`)
+          .map((a, i) => `${formatOptionNumber(i + 1)} *${a.service?.name}* em *${formatBrazilDate(a.scheduledAt)} às ${formatBrazilTime(a.scheduledAt)}*`)
           .join('\n');
-        reply = `Qual dos seus agendamentos você deseja cancelar?\n\n${list}\n0️⃣ *Voltar ao menu*\n\n_Envie o número do agendamento:_`;
+        reply = `Você tem mais de um agendamento. Qual deseja cancelar?\n\n${list}\n0️⃣ *Voltar ao menu*`;
       }
     } else if (isOption4) {
       const activeApps = await prisma.appointment.findMany({
@@ -850,7 +862,82 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
     } else if (isOption5) {
       reply = `📞 Você pode falar diretamente com nossa equipe:\n\n💈 *${shop.name}*\n📱 Telefone / WhatsApp: ${shop.phone || 'Em breve'}\n📍 Endereço: ${shop.address || 'Consulte nosso balcão'}\n\nEnvie *MENU* para voltar ao atendimento automático ou *0* para encerrar.`;
     } else {
-      reply = `Não compreendi exatamente. 😊\n\nComo posso ajudar você na *${shop.name}*?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n6️⃣ *✂️ Mudar meu visual (Visagismo)*\n0️⃣ *Encerrar atendimento*`;
+      const visagismItem = isVisagismEnabled ? '6️⃣ *✨ Visagismo — Mude de Visual*\n' : '';
+      reply = `Não compreendi exatamente. 😊\n\nComo posso ajudar você na *${shop.name}*?\n\n1️⃣ *Agendar horário*\n2️⃣ *Ver meu próximo horário*\n3️⃣ *Cancelar agendamento*\n4️⃣ *Remarcar horário*\n5️⃣ *Falar com a barbearia*\n${visagismItem}0️⃣ *Encerrar atendimento*`;
+    }
+  }
+
+  // -------------------------------------------------------------
+  // STATE: VISAGISM_WAITING_IMAGE
+  // -------------------------------------------------------------
+  else if (session.state === 'VISAGISM_WAITING_IMAGE') {
+    if (numericOption === '0' || normalized === '0' || normalized === 'voltar' || normalized === 'menu' || normalized === 'cancelar') {
+      reply = `Atendimento de Visagismo cancelado. 😊\n\nEnvie *MENU* a qualquer momento para ver as opções.`;
+      nextState = 'IDLE';
+      context = {};
+    } else {
+      let imageBuffer: Buffer | null = incoming.mediaBuffer || null;
+      let imageMime = incoming.mediaMimeType || 'image/jpeg';
+
+      if (!imageBuffer && incoming.mediaBase64) {
+        const match = incoming.mediaBase64.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          imageMime = match[1];
+          imageBuffer = Buffer.from(match[2], 'base64');
+        } else {
+          imageBuffer = Buffer.from(incoming.mediaBase64, 'base64');
+        }
+      } else if (!imageBuffer && incoming.mediaUrl) {
+        try {
+          const res = await fetch(incoming.mediaUrl);
+          if (res.ok) {
+            const arrayBuffer = await res.arrayBuffer();
+            imageBuffer = Buffer.from(arrayBuffer);
+            const contentType = res.headers.get('content-type');
+            if (contentType) imageMime = contentType;
+          }
+        } catch (e) {
+          console.warn('Erro ao baixar mediaUrl no WhatsApp:', e);
+        }
+      }
+
+      if (imageBuffer && imageBuffer.length > 0) {
+        try {
+          let sessionId = context.visagismSessionId;
+          let publicToken = context.visagismPublicToken;
+          if (!sessionId || !publicToken) {
+            const s = await createOrGetVisagismSession({ barbershopId: shop.id, phone });
+            sessionId = s.id;
+            publicToken = s.publicToken;
+          }
+
+          const result = await processVisagismFromWhatsAppSelfie({
+            sessionId,
+            barbershopId: shop.id,
+            publicToken,
+            fileBuffer: imageBuffer,
+            mimeType: imageMime,
+          });
+
+          const visagismUrl = `https://barber.projetosunion.cloud/visagismo/session/${publicToken}`;
+          const topRecs = result.recommendations.slice(0, 3);
+          const recsText = topRecs.map((r, i) => {
+            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
+            return `${medal} *${r.haircutName}* (${r.haircutStyle})\n_${r.reasoning}_`;
+          }).join('\n\n');
+
+          reply = `✨ *Encontrei opções incríveis para o seu formato de rosto (${result.detectedFaceShape})!*\n\n${recsText}\n\n👉 *Toque no link abaixo para ver a simulação no seu rosto e escolher:*\n${visagismUrl}\n\nDepois você pode escolher seu visual e reservar seu horário na *${shop.name}*! 💈\n\n_Envie *MENU* para voltar ao menu principal._`;
+          nextState = 'IDLE';
+          context = { lastVisagismToken: publicToken };
+        } catch (err: any) {
+          console.error('Erro ao processar selfie de visagismo:', err);
+          reply = `Não consegui usar essa foto 😕.\n\nTente enviar uma selfie:\n📸 de frente\n💡 com boa iluminação\n🚫 sem filtros\n🙂 mostrando claramente o rosto.\n\n_Ou envie 0 para voltar ao menu principal._`;
+        }
+      } else {
+        const publicToken = context.visagismPublicToken;
+        const visagismUrl = publicToken ? `https://barber.projetosunion.cloud/visagismo/session/${publicToken}` : 'https://barber.projetosunion.cloud/visagismo';
+        reply = `Não consegui identificar uma foto 😕.\n\n📸 Por favor, *envie uma selfie de frente* aqui no WhatsApp ou, se preferir, acesse sua experiência diretamente pelo navegador:\n${visagismUrl}\n\n_Ou envie 0 para voltar ao menu principal._`;
+      }
     }
   }
 
