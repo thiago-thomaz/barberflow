@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { VisagismImageProvider, GeneratePreviewInput, GeneratePreviewResult } from '../types.ts';
@@ -29,20 +30,21 @@ function getReplicateToken(): string {
 
 /**
  * Provedor Replicate com Inpainting e Preservação de Identidade Facial.
- * Utiliza a foto real do cliente como imagem base e aplica máscara capilar.
+ * Utiliza a foto real do cliente como imagem base e aplica máscara capilar com proteção facial.
  */
 export class ReplicateInpaintingVisagismProvider implements VisagismImageProvider {
   name = 'REPLICATE_SDXL_INPAINTING';
 
-  // SDXL Inpainting / Stable Diffusion Inpainting Version Hash
+  // SDXL Inpainting Version Hash
   private readonly modelVersion =
     process.env.REPLICATE_INPAINT_MODEL_VERSION ||
-    '95b7223104132402a9ae84cc67741f33b24660d29daea3af70e07a371f119304'; // stability-ai/sdxl inpainting
+    '95b7223104132402a9ae84cc67741f33b24660d29daea3af70e07a371f119304';
 
   async generatePreview(input: GeneratePreviewInput): Promise<GeneratePreviewResult | null> {
+    const startTime = Date.now();
     const token = getReplicateToken();
     if (!token) {
-      console.warn('REPLICATE_API_TOKEN não configurado para Inpainting.');
+      console.warn('[VISAGISM_PROVIDER] REPLICATE_API_TOKEN não configurado.');
       return null;
     }
 
@@ -51,15 +53,32 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         originalImageBuffer,
         originalImageMimeType,
         maskBuffer,
+        maskMode = 'HAIR_ONLY',
         stylePrompt,
         negativePrompt,
       } = input;
 
       const base64Image = `data:${originalImageMimeType || 'image/jpeg'};base64,${originalImageBuffer.toString('base64')}`;
 
-      // Se a máscara não foi fornecida, gera uma máscara geométrica conservadora de cabelo
-      const finalMaskBuffer = maskBuffer || generateHairMaskPNG(768, 1024, { includeBeard: false });
+      // Se a máscara não foi fornecida, gera máscara com modo especificado
+      const finalMaskBuffer = maskBuffer || generateHairMaskPNG(768, 1024, { mode: maskMode });
       const base64Mask = `data:image/png;base64,${finalMaskBuffer.toString('base64')}`;
+
+      const promptHash = crypto.createHash('md5').update(stylePrompt).digest('hex').slice(0, 8);
+
+      // Log técnico seguro
+      console.log(
+        JSON.stringify({
+          event: 'visagism_inpaint_request',
+          provider: this.name,
+          input_image_present: !!originalImageBuffer,
+          input_image_bytes: originalImageBuffer.length,
+          mask_present: !!finalMaskBuffer,
+          mask_bytes: finalMaskBuffer.length,
+          mask_mode: maskMode,
+          prompt_hash: promptHash,
+        })
+      );
 
       let res: Response | null = null;
       let retries = 0;
@@ -101,7 +120,7 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
 
       if (!res || !res.ok) {
         const errBody = res ? await res.text() : 'No response';
-        console.warn('Replicate Inpainting API status:', res?.status, errBody);
+        console.warn('[VISAGISM_PROVIDER] Replicate HTTP Error status:', res?.status, errBody);
         return null;
       }
 
@@ -119,21 +138,35 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         attempts++;
       }
 
+      const latencyMs = Date.now() - startTime;
+
       if (data.status === 'succeeded' && data.output) {
         const outputUrl = typeof data.output === 'string' ? data.output : data.output[0] || null;
         if (outputUrl) {
+          console.log(
+            JSON.stringify({
+              event: 'visagism_inpaint_success',
+              provider: this.name,
+              generation_id: data.id,
+              latency_ms: latencyMs,
+              status: data.status,
+            })
+          );
+
           return {
             imageUrl: outputUrl,
             provider: this.name,
             generationId: data.id,
+            maskMode,
+            latencyMs,
           };
         }
       }
 
-      console.warn('Replicate Inpainting não retornou imagem válida:', data.status, data.error);
+      console.warn('[VISAGISM_PROVIDER] Predição não sucedeu:', data.status, data.error);
       return null;
     } catch (err) {
-      console.error('Erro no Replicate Inpainting Provider:', err);
+      console.error('[VISAGISM_PROVIDER] Erro durante inpainting:', err);
       return null;
     }
   }
@@ -151,11 +184,13 @@ export async function generateClientVisualPreview(params: {
   stylePrompt?: string;
   negativePrompt?: string;
   maskBuffer?: Buffer;
+  maskMode?: any;
 }): Promise<string | null> {
   const result = await replicateImageProvider.generatePreview({
     originalImageBuffer: params.clientPhotoBuffer,
     originalImageMimeType: params.clientPhotoMimeType,
     maskBuffer: params.maskBuffer,
+    maskMode: params.maskMode || 'HAIR_ONLY',
     stylePrompt:
       params.stylePrompt ||
       "Edit existing person's hairstyle. Apply a modern clean men's haircut. Preserve exact facial identity and features. Photorealistic.",

@@ -3,7 +3,9 @@ import { prisma } from '@/lib/prisma';
 import { getVisagismPhotoBuffer, recordVisagismMetric } from '@/lib/visagism/engine';
 import { replicateImageProvider } from '@/lib/visagism/providers/replicate';
 import { HAIRCUTS_CATALOG } from '@/lib/visagism/catalog';
-import { generateHairMaskPNG } from '@/lib/visagism/mask';
+import { generateMaskByMode } from '@/lib/visagism/mask';
+import { validateIdentityQuality } from '@/lib/visagism/gate';
+import type { MaskMode } from '@/lib/visagism/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,20 +88,26 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
     const stylePrompt =
       catalogItem?.stylePrompt ||
-      `Edit the existing person's hairstyle. Apply a realistic men's ${haircutName || 'fade'} haircut. Preserve exact original face, eyes, nose, mouth and facial structure. Photorealistic barber finish.`;
+      `Edit the existing person's hairstyle only. Apply a realistic men's ${haircutName || 'fade'} haircut. Preserve exact original face, eyes, nose, mouth and facial structure. Photorealistic barber finish.`;
 
     const negativePrompt = catalogItem?.negativePrompt;
-    const includeBeard = catalogItem?.maskType === 'hair_beard' || catalogItem?.maskType === 'beard';
+    
+    // Determina o modo de máscara com proteção facial
+    const maskMode: MaskMode =
+      catalogItem?.maskType === 'hair_beard'
+        ? 'HAIR_AND_BEARD'
+        : catalogItem?.maskType === 'beard'
+        ? 'BEARD_ONLY'
+        : 'HAIR_ONLY';
 
-    // Gera máscara capilar protegendo a região central dos olhos/nariz/boca
-    const maskBuffer = generateHairMaskPNG(768, 1024, { includeBeard });
+    const maskBuffer = generateMaskByMode(maskMode, 768, 1024);
 
-    // Registra métrica de início
+    // Registra métrica de início / tentativa
     await recordVisagismMetric({
       barbershopId: session.barbershopId,
       sessionId: session.id,
-      eventName: 'generation_started',
-      metadata: { haircutName: haircutName || catalogItem?.name },
+      eventName: 'generation_attempt',
+      metadata: { haircutName: haircutName || catalogItem?.name, maskMode },
     });
 
     // Executa Inpainting com preservação de identidade facial
@@ -107,6 +115,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       originalImageBuffer: clientBuffer,
       originalImageMimeType: clientMime,
       maskBuffer,
+      maskMode,
       stylePrompt,
       negativePrompt,
     });
@@ -118,17 +127,45 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         barbershopId: session.barbershopId,
         sessionId: session.id,
         eventName: 'generation_failed',
-        metadata: { haircutName, latencyMs },
+        metadata: { haircutName, latencyMs, reason: 'Provider output null' },
       });
 
       return NextResponse.json({
         success: false,
-        message: 'Não foi possível gerar a simulação no momento.',
+        message: 'Não conseguimos gerar a simulação nesta tentativa. Você pode tentar novamente sem descontar suas simulações.',
         previewUrl: null,
       });
     }
 
-    // Registra métrica de sucesso
+    // Identity Quality Gate: Valida a integridade da imagem gerada
+    const gateResult = await validateIdentityQuality({
+      imageUrl: genResult.imageUrl,
+      originalImageBuffer: clientBuffer,
+      haircutName,
+      latencyMs,
+    });
+
+    if (!gateResult.passed) {
+      await recordVisagismMetric({
+        barbershopId: session.barbershopId,
+        sessionId: session.id,
+        eventName: 'generation_rejected',
+        metadata: {
+          haircutName,
+          latencyMs,
+          rejection_reason: gateResult.reason,
+          score: gateResult.score,
+        },
+      });
+
+      return NextResponse.json({
+        success: false,
+        message: 'Não conseguimos preservar sua aparência com qualidade suficiente nesta tentativa. Vamos tentar novamente.',
+        previewUrl: null,
+      });
+    }
+
+    // Registra métrica de sucesso (consome simulação válida)
     await recordVisagismMetric({
       barbershopId: session.barbershopId,
       sessionId: session.id,
@@ -137,7 +174,9 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         haircutName: haircutName || catalogItem?.name,
         targetImageUrl,
         provider: genResult.provider,
+        maskMode,
         latencyMs,
+        qualityScore: gateResult.score,
       },
     });
 
@@ -148,9 +187,10 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       previewUrl: genResult.imageUrl,
       haircutName: haircutName || catalogItem?.name,
       remainingGenerations: remaining,
+      maskMode,
     });
   } catch (error: any) {
-    console.error('Erro na rota generate-preview:', error);
+    console.error('[GENERATE_PREVIEW] Erro interno:', error);
     return NextResponse.json({ error: 'Erro interno ao processar geração' }, { status: 500 });
   }
 }

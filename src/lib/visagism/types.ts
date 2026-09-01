@@ -33,6 +33,7 @@ export type ColorPreference =
   | 'Colorido';
 
 export type MaskRegionType = 'hair' | 'hair_beard' | 'beard';
+export type MaskMode = 'HAIR_ONLY' | 'BEARD_ONLY' | 'HAIR_AND_BEARD';
 
 export interface VisagismProfileInput {
   objective: VisagismObjective;
@@ -124,6 +125,7 @@ export interface GeneratePreviewInput {
   originalImageBuffer: Buffer;
   originalImageMimeType: string;
   maskBuffer?: Buffer;
+  maskMode?: MaskMode;
   stylePrompt: string;
   negativePrompt?: string;
   identityStrength?: number;
@@ -134,9 +136,18 @@ export interface GeneratePreviewResult {
   imageUrl: string;
   provider: string;
   generationId?: string;
+  maskMode?: MaskMode;
+  latencyMs?: number;
 }
 
 export interface VisagismImageProvider {
   name: string;
   generatePreview(input: GeneratePreviewInput): Promise<GeneratePreviewResult | null>;
+}
+
+export interface IdentityGateResult {
+  passed: boolean;
+  score?: number;
+  reason?: string;
+  error?: string;
 }
