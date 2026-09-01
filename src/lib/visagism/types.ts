@@ -1,4 +1,4 @@
-// BarberFlow - Tipos e Contratos de Visagismo (AI Provider Agnostic)
+// BarberFlow - Tipos e Contratos de Visagismo (AI Provider Agnostic & Inpainting Ready)
 
 export type FaceShape = 'Oval' | 'Redondo' | 'Quadrado' | 'Retangular' | 'Triangular' | 'Coracao' | 'Nao sei';
 
@@ -32,6 +32,8 @@ export type ColorPreference =
   | 'Grisalho'
   | 'Colorido';
 
+export type MaskRegionType = 'hair' | 'hair_beard' | 'beard';
+
 export interface VisagismProfileInput {
   objective: VisagismObjective;
   style: VisagismStyle;
@@ -55,6 +57,9 @@ export interface HaircutItem {
   suggestedServiceKeywords: string[];
   stylingTips: string;
   referenceImageUrl: string;
+  stylePrompt?: string;
+  negativePrompt?: string;
+  maskType?: MaskRegionType;
 }
 
 export interface BeardStyleItem {
@@ -65,6 +70,8 @@ export interface BeardStyleItem {
   maintenanceLevel: MaintenanceLevel;
   idealWithHaircuts: string[];
   stylingTips: string;
+  stylePrompt?: string;
+  negativePrompt?: string;
 }
 
 export interface ColorOptionItem {
@@ -98,7 +105,7 @@ export interface VisagismEvaluationResponse {
 }
 
 /**
- * Interface de Abstração para Provedores de Visagismo (Agnóstico a Provedores)
+ * Interface de Abstração para Provedores de Avaliação de Perfil (Gemini/Deterministic)
  */
 export interface VisagismAIProvider {
   name: string;
@@ -108,4 +115,28 @@ export interface VisagismAIProvider {
     tenantServices?: { id: string; name: string; price: number }[]
   ): Promise<VisagismEvaluationResponse>;
   analyzePhoto?(photoBuffer: Buffer, mimeType: string): Promise<{ detectedFaceShape?: FaceShape; notes?: string }>;
+}
+
+/**
+ * Interface de Abstração para Geração de Imagem com Preservação de Identidade (Inpainting)
+ */
+export interface GeneratePreviewInput {
+  originalImageBuffer: Buffer;
+  originalImageMimeType: string;
+  maskBuffer?: Buffer;
+  stylePrompt: string;
+  negativePrompt?: string;
+  identityStrength?: number;
+  denoisingStrength?: number;
+}
+
+export interface GeneratePreviewResult {
+  imageUrl: string;
+  provider: string;
+  generationId?: string;
+}
+
+export interface VisagismImageProvider {
+  name: string;
+  generatePreview(input: GeneratePreviewInput): Promise<GeneratePreviewResult | null>;
 }

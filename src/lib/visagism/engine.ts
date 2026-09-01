@@ -9,6 +9,13 @@ export const VISAGISM_SESSION_TTL_HOURS = 24;
 export const VISAGISM_STORAGE_DIR = path.join(process.cwd(), 'storage', 'visagismo');
 
 /**
+ * Feature flag do Visagismo V2 (Preservação de Identidade + Nova Jornada WhatsApp)
+ */
+export function isVisagismV2Enabled(): boolean {
+  return process.env.VISAGISM_V2_ENABLED !== 'false';
+}
+
+/**
  * Garante que o diretório de armazenamento privado local exista
  */
 export function ensureVisagismStorageDir(): string {
@@ -44,7 +51,7 @@ export async function createOrGetVisagismSession(params: {
     }
   }
 
-  // Gera um token criptograficamente seguro e aleatório (32 bytes hex)
+  // Gera um token criptograficamente seguro e aleatório (48 caracteres hex)
   const publicToken = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + VISAGISM_SESSION_TTL_HOURS * 60 * 60 * 1000);
 
@@ -69,11 +76,11 @@ export async function createOrGetVisagismSession(params: {
     },
   });
 
-  // Registra métrica de início
+  // Registra métrica de início de sessão
   await recordVisagismMetric({
     barbershopId,
     sessionId: session.id,
-    eventName: 'visagism_started',
+    eventName: 'visagism_session_started',
     metadata: { hasCustomer: !!resolvedCustomerId },
   });
 
@@ -185,6 +192,15 @@ export async function saveVisagismPhoto(params: {
     eventName: 'photo_uploaded',
     metadata: { sizeBytes: fileBuffer.length, mimeType, detectedShape: visionAnalysis.detectedFaceShape },
   });
+
+  if (visionAnalysis.detectedFaceShape) {
+    await recordVisagismMetric({
+      barbershopId: updatedSession.barbershopId,
+      sessionId,
+      eventName: 'analysis_completed',
+      metadata: { detectedShape: visionAnalysis.detectedFaceShape },
+    });
+  }
 
   return {
     success: true,
@@ -338,49 +354,6 @@ export async function evaluateVisagismSession(
   });
 
   return evaluation;
-}
-
-/**
-  * Processa selfie enviada via WhatsApp: analisa com Gemini Vision e gera Top 3 do catálogo
-  */
-export async function processVisagismFromWhatsAppSelfie(params: {
-  sessionId: string;
-  barbershopId: string;
-  publicToken: string;
-  fileBuffer: Buffer;
-  mimeType: string;
-}) {
-  const { sessionId, barbershopId, publicToken, fileBuffer, mimeType } = params;
-
-  const photoResult = await saveVisagismPhoto({
-    sessionId,
-    fileBuffer,
-    mimeType,
-  });
-
-  const rawShape = photoResult.detectedFaceShape || 'Oval';
-  const validShapes = ['Oval', 'Quadrado', 'Redondo', 'Retangular', 'Triangular', 'Coracao'];
-  const faceShape = validShapes.find(s => s.toLowerCase() === rawShape.toLowerCase()) || 'Oval';
-
-  const evaluation = await evaluateVisagismSession(
-    { id: sessionId, barbershopId, publicToken },
-    {
-      objective: 'Estilo completo',
-      style: 'Moderno',
-      changeLevel: 'Medio',
-      maintenanceLevel: 'Medio',
-      hairLength: 'Sim',
-      faceShape: faceShape as FaceShape,
-    }
-  );
-
-  return {
-    success: true,
-    detectedFaceShape: faceShape,
-    notes: photoResult.notes,
-    recommendations: evaluation.recommendations,
-    publicToken,
-  };
 }
 
 /**

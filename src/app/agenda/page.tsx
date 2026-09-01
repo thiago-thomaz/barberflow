@@ -23,6 +23,7 @@ import {
   Banknote,
   QrCode,
   Filter,
+  Sparkles,
 } from 'lucide-react';
 
 export default function AgendaPage() {
@@ -850,6 +851,16 @@ export default function AgendaPage() {
                 <span className="text-zinc-400">Status Atual:</span>
                 <Badge status={selectedApp.status} size="sm" />
               </div>
+
+              {selectedApp.notes && (
+                <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs mt-2">
+                  <div className="flex items-center gap-1.5 text-amber-400 font-bold mb-1">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Visual / Observações:</span>
+                  </div>
+                  <p className="text-zinc-200 font-medium">{selectedApp.notes}</p>
+                </div>
+              )}
             </div>
 
             {/* Quick Actions based on status */}

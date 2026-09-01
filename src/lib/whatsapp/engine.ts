@@ -4,7 +4,7 @@ import { scheduleAppointmentReminders, cancelAppointmentReminders } from './remi
 import { generateGoogleCalendarUrl } from '../calendar';
 import { BRAZIL_TIMEZONE, formatBrazilDate, formatBrazilTime } from '../timezone';
 import { publishEvent } from '../events';
-import { createOrGetVisagismSession, processVisagismFromWhatsAppSelfie } from '../visagism/engine.ts';
+import { createOrGetVisagismSession } from '../visagism/engine.ts';
 
 export const SESSION_TTL_MINUTES = 30;
 
@@ -759,11 +759,12 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
         barbershopId: shop.id,
         phone,
       });
-      reply = `✨ *Vamos mudar seu visual!*\n\nVou analisar sua foto e sugerir cortes, estilos de cabelo e barba que combinam com você.\n\n📸 *Envie uma selfie de frente, com boa iluminação e sem filtros.*\n_Não precisa ser uma foto profissional._\n\n_Ou envie 0 para voltar ao menu principal._`;
-      nextState = 'VISAGISM_WAITING_IMAGE';
+      const visagismUrl = `https://barber.projetosunion.cloud/visagismo/session/${visagismSession.publicToken}`;
+
+      reply = `✨ *MUDE DE VISUAL*\n\nQuer descobrir quais cortes e estilos de cabelo e barba mais combinam com você?\n\nNossa experiência de Visagismo analisa seu formato de rosto e apresenta opções personalizadas para você experimentar em tempo real!\n\n📸 _A selfie será feita diretamente pelo seu celular no navegador, com total privacidade._\n\n👉 *COMEÇAR VISAGISMO:*\n${visagismUrl}\n\n_Envie MENU para ver outras opções ou 0 para encerrar._`;
+      nextState = 'IDLE';
       context = {
-        visagismSessionId: visagismSession.id,
-        visagismPublicToken: visagismSession.publicToken,
+        lastVisagismToken: visagismSession.publicToken,
       };
     } else if (isOption1) {
       nextState = 'SELECTING_SERVICE';
@@ -868,77 +869,17 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
   }
 
   // -------------------------------------------------------------
-  // STATE: VISAGISM_WAITING_IMAGE
+  // STATE: VISAGISM_WAITING_IMAGE (Fallback limpo redirecionando para Web)
   // -------------------------------------------------------------
   else if (session.state === 'VISAGISM_WAITING_IMAGE') {
-    if (numericOption === '0' || normalized === '0' || normalized === 'voltar' || normalized === 'menu' || normalized === 'cancelar') {
-      reply = `Atendimento de Visagismo cancelado. 😊\n\nEnvie *MENU* a qualquer momento para ver as opções.`;
-      nextState = 'IDLE';
-      context = {};
-    } else {
-      let imageBuffer: Buffer | null = incoming.mediaBuffer || null;
-      let imageMime = incoming.mediaMimeType || 'image/jpeg';
+    const publicToken = context.visagismPublicToken || context.lastVisagismToken;
+    const visagismUrl = publicToken
+      ? `https://barber.projetosunion.cloud/visagismo/session/${publicToken}`
+      : 'https://barber.projetosunion.cloud/visagismo';
 
-      if (!imageBuffer && incoming.mediaBase64) {
-        const match = incoming.mediaBase64.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
-          imageMime = match[1];
-          imageBuffer = Buffer.from(match[2], 'base64');
-        } else {
-          imageBuffer = Buffer.from(incoming.mediaBase64, 'base64');
-        }
-      } else if (!imageBuffer && incoming.mediaUrl) {
-        try {
-          const res = await fetch(incoming.mediaUrl);
-          if (res.ok) {
-            const arrayBuffer = await res.arrayBuffer();
-            imageBuffer = Buffer.from(arrayBuffer);
-            const contentType = res.headers.get('content-type');
-            if (contentType) imageMime = contentType;
-          }
-        } catch (e) {
-          console.warn('Erro ao baixar mediaUrl no WhatsApp:', e);
-        }
-      }
-
-      if (imageBuffer && imageBuffer.length > 0) {
-        try {
-          let sessionId = context.visagismSessionId;
-          let publicToken = context.visagismPublicToken;
-          if (!sessionId || !publicToken) {
-            const s = await createOrGetVisagismSession({ barbershopId: shop.id, phone });
-            sessionId = s.id;
-            publicToken = s.publicToken;
-          }
-
-          const result = await processVisagismFromWhatsAppSelfie({
-            sessionId,
-            barbershopId: shop.id,
-            publicToken,
-            fileBuffer: imageBuffer,
-            mimeType: imageMime,
-          });
-
-          const visagismUrl = `https://barber.projetosunion.cloud/visagismo/session/${publicToken}`;
-          const topRecs = result.recommendations.slice(0, 3);
-          const recsText = topRecs.map((r, i) => {
-            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
-            return `${medal} *${r.haircutName}* (${r.haircutStyle})\n_${r.reasoning}_`;
-          }).join('\n\n');
-
-          reply = `✨ *Encontrei opções incríveis para o seu formato de rosto (${result.detectedFaceShape})!*\n\n${recsText}\n\n👉 *Toque no link abaixo para ver a simulação no seu rosto e escolher:*\n${visagismUrl}\n\nDepois você pode escolher seu visual e reservar seu horário na *${shop.name}*! 💈\n\n_Envie *MENU* para voltar ao menu principal._`;
-          nextState = 'IDLE';
-          context = { lastVisagismToken: publicToken };
-        } catch (err: any) {
-          console.error('Erro ao processar selfie de visagismo:', err);
-          reply = `Não consegui usar essa foto 😕.\n\nTente enviar uma selfie:\n📸 de frente\n💡 com boa iluminação\n🚫 sem filtros\n🙂 mostrando claramente o rosto.\n\n_Ou envie 0 para voltar ao menu principal._`;
-        }
-      } else {
-        const publicToken = context.visagismPublicToken;
-        const visagismUrl = publicToken ? `https://barber.projetosunion.cloud/visagismo/session/${publicToken}` : 'https://barber.projetosunion.cloud/visagismo';
-        reply = `Não consegui identificar uma foto 😕.\n\n📸 Por favor, *envie uma selfie de frente* aqui no WhatsApp ou, se preferir, acesse sua experiência diretamente pelo navegador:\n${visagismUrl}\n\n_Ou envie 0 para voltar ao menu principal._`;
-      }
-    }
+    reply = `✨ *Visagismo BarberFlow*\n\nPara sua comodidade e privacidade, a análise e fotos são feitas diretamente no seu navegador:\n\n👉 *Acesse:* ${visagismUrl}\n\n_Envie MENU para ver as opções._`;
+    nextState = 'IDLE';
+    context = {};
   }
 
   // -------------------------------------------------------------

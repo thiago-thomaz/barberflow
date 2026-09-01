@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getVisagismPhotoBuffer } from '@/lib/visagism/engine';
-import { generateClientVisualPreview } from '@/lib/visagism/providers/replicate';
+import { getVisagismPhotoBuffer, recordVisagismMetric } from '@/lib/visagism/engine';
+import { replicateImageProvider } from '@/lib/visagism/providers/replicate';
+import { HAIRCUTS_CATALOG } from '@/lib/visagism/catalog';
+import { generateHairMaskPNG } from '@/lib/visagism/mask';
+
+export const dynamic = 'force-dynamic';
 
 interface RouteContext {
   params: {
@@ -10,20 +14,17 @@ interface RouteContext {
 }
 
 export async function POST(req: NextRequest, { params }: RouteContext) {
+  const startTime = Date.now();
   try {
     const { token } = params;
     const body = await req.json().catch(() => ({}));
-    const { targetImageUrl, haircutName } = body;
+    const { targetImageUrl, haircutName, haircutId } = body;
 
     if (!token) {
       return NextResponse.json({ error: 'Token inválido' }, { status: 400 });
     }
 
-    if (!targetImageUrl) {
-      return NextResponse.json({ error: 'targetImageUrl obrigatório' }, { status: 400 });
-    }
-
-    // Busca sessão ativa
+    // Busca sessão ativa e valida expiração
     const session = await prisma.visagismSession.findUnique({
       where: { publicToken: token },
     });
@@ -46,10 +47,11 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         success: false,
         message: `Você já atingiu o limite de ${MAX_GENERATIONS} simulações gratuitas para esta sessão.`,
         previewUrl: null,
+        remainingGenerations: 0,
       });
     }
 
-    // Busca foto do cliente salva no storage ou enviada pelo frontend
+    // Busca foto do cliente salva no storage privado
     let clientBuffer: Buffer | null = null;
     let clientMime = 'image/jpeg';
 
@@ -70,40 +72,82 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     if (!clientBuffer) {
       return NextResponse.json({
         success: false,
-        message: 'Foto original do cliente não encontrada para montagem de IA.',
+        message: 'Foto original do cliente não encontrada para inpainting facial.',
         previewUrl: null,
       });
     }
 
-    // Gera preview usando Replicate
-    const generatedUrl = await generateClientVisualPreview({
-      clientPhotoBuffer: clientBuffer,
-      clientPhotoMimeType: clientMime,
-      targetHaircutImageUrl: targetImageUrl,
+    // Localiza os prompts e máscara no catálogo
+    const catalogItem = HAIRCUTS_CATALOG.find(
+      (h) =>
+        (haircutId && h.id === haircutId) ||
+        (haircutName && h.name.toLowerCase() === haircutName.toLowerCase())
+    );
+
+    const stylePrompt =
+      catalogItem?.stylePrompt ||
+      `Edit the existing person's hairstyle. Apply a realistic men's ${haircutName || 'fade'} haircut. Preserve exact original face, eyes, nose, mouth and facial structure. Photorealistic barber finish.`;
+
+    const negativePrompt = catalogItem?.negativePrompt;
+    const includeBeard = catalogItem?.maskType === 'hair_beard' || catalogItem?.maskType === 'beard';
+
+    // Gera máscara capilar protegendo a região central dos olhos/nariz/boca
+    const maskBuffer = generateHairMaskPNG(768, 1024, { includeBeard });
+
+    // Registra métrica de início
+    await recordVisagismMetric({
+      barbershopId: session.barbershopId,
+      sessionId: session.id,
+      eventName: 'generation_started',
+      metadata: { haircutName: haircutName || catalogItem?.name },
     });
 
-    if (!generatedUrl) {
+    // Executa Inpainting com preservação de identidade facial
+    const genResult = await replicateImageProvider.generatePreview({
+      originalImageBuffer: clientBuffer,
+      originalImageMimeType: clientMime,
+      maskBuffer,
+      stylePrompt,
+      negativePrompt,
+    });
+
+    const latencyMs = Date.now() - startTime;
+
+    if (!genResult || !genResult.imageUrl) {
+      await recordVisagismMetric({
+        barbershopId: session.barbershopId,
+        sessionId: session.id,
+        eventName: 'generation_failed',
+        metadata: { haircutName, latencyMs },
+      });
+
       return NextResponse.json({
         success: false,
-        message: 'Não foi possível gerar a montagem no momento.',
+        message: 'Não foi possível gerar a simulação no momento.',
         previewUrl: null,
       });
     }
 
-    // Registra métrica de geração
-    await prisma.visagismMetric.create({
-      data: {
-        barbershopId: session.barbershopId,
-        sessionId: session.id,
-        eventName: 'preview_generated',
-        metadata: JSON.stringify({ haircutName, targetImageUrl }),
+    // Registra métrica de sucesso
+    await recordVisagismMetric({
+      barbershopId: session.barbershopId,
+      sessionId: session.id,
+      eventName: 'preview_generated',
+      metadata: {
+        haircutName: haircutName || catalogItem?.name,
+        targetImageUrl,
+        provider: genResult.provider,
+        latencyMs,
       },
-    }).catch(() => {});
+    });
+
+    const remaining = Math.max(0, MAX_GENERATIONS - (existingGenerations + 1));
 
     return NextResponse.json({
       success: true,
-      previewUrl: generatedUrl,
-      haircutName,
+      previewUrl: genResult.imageUrl,
+      haircutName: haircutName || catalogItem?.name,
+      remainingGenerations: remaining,
     });
   } catch (error: any) {
     console.error('Erro na rota generate-preview:', error);

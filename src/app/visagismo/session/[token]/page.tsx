@@ -12,7 +12,6 @@ import {
   ArrowLeft,
   Sparkles,
   Share2,
-  Download,
   Calendar,
   MessageSquare,
   Trash2,
@@ -25,9 +24,11 @@ import {
   ZoomIn,
   X,
   Loader2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { Modal } from '@/components/UI/Modal';
 import { Badge } from '@/components/UI/Badge';
+import { BeforeAfterSlider } from '@/components/Visagismo/BeforeAfterSlider';
 
 export default function VisagismoSessionPage() {
   const params = useParams();
@@ -40,14 +41,16 @@ export default function VisagismoSessionPage() {
   const [error, setError] = useState('');
   const [step, setStep] = useState<number>(1);
 
-  // Step 2: Photo & Consent
+  // Step 2: Photo, Confirmation & Consent
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [isPhotoConfirmed, setIsPhotoConfirmed] = useState<boolean>(false);
   const [consent, setConsent] = useState<boolean>(true);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
-  // Step 3 & 4 & 5: Profile questionnaire
+  // Profile questionnaire
   const [objective, setObjective] = useState<string>('Corte + Barba');
   const [style, setStyle] = useState<string>('Moderno');
   const [changeLevel, setChangeLevel] = useState<string>('Medio');
@@ -66,23 +69,28 @@ export default function VisagismoSessionPage() {
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [selectedRecIndex, setSelectedRecIndex] = useState<number>(0);
 
-  // AI Generated Visual Previews (Face Inpainting)
+  // AI Generated Visual Previews (Inpainting Facial)
   const [aiPreviews, setAiPreviews] = useState<Record<number, string>>({});
   const [generatingPreview, setGeneratingPreview] = useState<boolean>(false);
+  const [remainingGenerations, setRemainingGenerations] = useState<number>(3);
 
   // Lightbox Zoom Modal (Expansão em Tela Cheia)
   const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string; subtitle?: string } | null>(null);
 
-  // Share & Action states
-  const [sharing, setSharing] = useState(false);
-  const [savedFeedback, setSavedFeedback] = useState(false);
+  // Action states
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // Função para gerar ou recuperar montagem de IA do cliente com o corte escolhido
+  // Função para disparar Inpainting com preservação de identidade na foto do cliente
   const triggerAiPreview = async (recIndex: number, currentRecs?: any[]) => {
     const list = currentRecs || recommendations;
     const targetRec = list[recIndex];
     if (!targetRec || !photoPreview) return;
     if (aiPreviews[recIndex]) return; // Já gerado em cache
+
+    if (remainingGenerations <= 0) {
+      alert('Você já utilizou o limite de 3 simulações para esta sessão.');
+      return;
+    }
 
     setGeneratingPreview(true);
     try {
@@ -111,21 +119,28 @@ export default function VisagismoSessionPage() {
         body: JSON.stringify({
           targetImageUrl: targetRec.referenceImageUrl,
           haircutName: targetRec.haircutName,
+          haircutId: targetRec.haircutId,
           clientPhotoBase64: base64Payload,
         }),
       });
+
       const data = await res.json();
       if (res.ok && data.previewUrl) {
         setAiPreviews((prev) => ({ ...prev, [recIndex]: data.previewUrl }));
+        if (typeof data.remainingGenerations === 'number') {
+          setRemainingGenerations(data.remainingGenerations);
+        }
+      } else if (!res.ok) {
+        alert(data.message || 'Não foi possível gerar a simulação no momento.');
       }
     } catch (err) {
-      console.warn('Erro ao gerar preview facial:', err);
+      console.warn('Erro ao gerar inpainting facial:', err);
     } finally {
       setGeneratingPreview(false);
     }
   };
 
-  // Load Session
+  // Carrega dados da Sessão
   useEffect(() => {
     async function loadSession() {
       try {
@@ -138,6 +153,7 @@ export default function VisagismoSessionPage() {
 
           if (data.session.hasPhoto) {
             setPhotoPreview(`/api/visagismo/session/${token}/photo`);
+            setIsPhotoConfirmed(true);
           }
 
           if (data.session.profile) {
@@ -152,10 +168,7 @@ export default function VisagismoSessionPage() {
 
           if (data.session.recommendations && data.session.recommendations.length > 0) {
             setRecommendations(data.session.recommendations);
-            setStep(6); // Go to results if already evaluated
-            if (data.session.hasPhoto) {
-              triggerAiPreview(0, data.session.recommendations);
-            }
+            setStep(6); // Direto para os resultados se já avaliado
           }
         } else {
           setError(data.error || 'Sessão não encontrada ou expirada');
@@ -170,8 +183,8 @@ export default function VisagismoSessionPage() {
     if (token) loadSession();
   }, [token]);
 
-  // Handle Photo Selection
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Manipulação de Seleção de Foto (Câmera ou Galeria)
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -181,6 +194,8 @@ export default function VisagismoSessionPage() {
     }
 
     setPhotoFile(file);
+    setIsPhotoConfirmed(false); // Aguarda confirmação do usuário
+
     const reader = new FileReader();
     reader.onload = (event) => {
       setPhotoPreview(event.target?.result as string);
@@ -188,15 +203,14 @@ export default function VisagismoSessionPage() {
     reader.readAsDataURL(file);
   };
 
-  // Upload Photo with Consent
-  const handleUploadPhoto = async () => {
+  // Upload definitivo da foto após confirmação do usuário
+  const handleConfirmAndUploadPhoto = async () => {
     if (!consent) {
       alert('Por favor, confirme o consentimento para prosseguir.');
       return;
     }
 
     if (!photoFile && !photoPreview) {
-      // Allow proceeding without photo if user prefers questionnaire only
       setStep(3);
       return;
     }
@@ -213,8 +227,9 @@ export default function VisagismoSessionPage() {
           body: formData,
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Erro no upload');
+        if (!res.ok) throw new Error(data.error || 'Erro no upload da foto');
 
+        setIsPhotoConfirmed(true);
         if (data.detectedFaceShape) {
           setFaceShape(data.detectedFaceShape);
           setAiDetectedShape(data.detectedFaceShape);
@@ -231,16 +246,18 @@ export default function VisagismoSessionPage() {
       }
     }
 
+    setIsPhotoConfirmed(true);
     setStep(3);
   };
 
-  // Delete Photo
+  // Exclusão de foto (LGPD)
   const handleDeletePhoto = async () => {
     if (!confirm('Deseja realmente excluir sua foto? Ela será apagada permanentemente do servidor.')) return;
     try {
       await fetch(`/api/visagismo/session/${token}/photo`, { method: 'DELETE' });
       setPhotoPreview(null);
       setPhotoFile(null);
+      setIsPhotoConfirmed(false);
       setAiPreviews({});
       alert('Foto excluída com sucesso.');
     } catch (err) {
@@ -248,7 +265,7 @@ export default function VisagismoSessionPage() {
     }
   };
 
-  // Submit Profile & Generate Recommendations
+  // Submissão do perfil & Cálculo das Recomendações
   const handleEvaluate = async () => {
     setEvaluating(true);
     try {
@@ -271,12 +288,7 @@ export default function VisagismoSessionPage() {
 
       setRecommendations(data.evaluation.recommendations);
       setSelectedRecIndex(0);
-      setStep(6); // Step 6: Resultados
-
-      // Dispara montagem facial via Replicate para a 1ª recomendação
-      if (photoPreview) {
-        triggerAiPreview(0, data.evaluation.recommendations);
-      }
+      setStep(6); // Step 6: Resultados & Simulação
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -284,11 +296,12 @@ export default function VisagismoSessionPage() {
     }
   };
 
-  // Action: Save / Share
-  const handleSelectAndAction = async (actionType: 'SAVE' | 'APPOINTMENT' | 'WHATSAPP') => {
+  // Ação de Seleção de Estilo & Redirecionamento
+  const handleSelectAndAction = async (actionType: 'APPOINTMENT' | 'WHATSAPP') => {
     const selectedRec = recommendations[selectedRecIndex];
     if (!selectedRec) return;
 
+    setActionLoading(actionType);
     try {
       const res = await fetch(`/api/visagismo/session/${token}/select`, {
         method: 'POST',
@@ -299,60 +312,50 @@ export default function VisagismoSessionPage() {
           haircutStyle: selectedRec.haircutStyle,
           beardName: selectedRec.beardName,
           hairColor: selectedRec.hairColor,
-          action:
-            actionType === 'APPOINTMENT'
-              ? 'APPOINTMENT_CLICKED'
-              : actionType === 'WHATSAPP'
-              ? 'WHATSAPP_SHARED'
-              : 'STYLE_SAVED',
+          action: actionType === 'APPOINTMENT' ? 'APPOINTMENT_CLICKED' : 'WHATSAPP_SHARED',
         }),
       });
 
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao selecionar estilo');
 
       if (actionType === 'WHATSAPP' && data.whatsappUrl) {
         window.open(data.whatsappUrl, '_blank');
       } else if (actionType === 'APPOINTMENT' && data.bookingUrl) {
         router.push(data.bookingUrl);
-      } else if (actionType === 'SAVE') {
-        if (navigator.share) {
-          try {
-            await navigator.share({
-              title: `Meu Novo Visual - ${session?.barbershop?.name || 'BarberFlow'}`,
-              text: `Meu novo estilo no BarberFlow:\n✂️ Corte: ${selectedRec.haircutName}\n💈 Estilo: ${selectedRec.haircutStyle}\n🧔 Barba: ${selectedRec.beardName || 'Alinhada'}`,
-              url: window.location.href,
-            });
-          } catch (e) {
-            // Share dismissed
-          }
-        }
-        setSavedFeedback(true);
-        setTimeout(() => setSavedFeedback(false), 3000);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setActionLoading(null);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0D0F12] text-zinc-400 text-sm">
-        <div className="text-center space-y-3">
-          <Scissors className="h-8 w-8 text-amber-500 animate-spin mx-auto" />
-          <p>Carregando Consultor de Visagismo...</p>
-        </div>
+      <div className="min-h-screen bg-[#0B0D13] text-white flex flex-col items-center justify-center p-6">
+        <Loader2 className="h-10 w-10 text-amber-500 animate-spin mb-4" />
+        <p className="text-zinc-400 font-medium">Carregando experiência de Visagismo...</p>
       </div>
     );
   }
 
   if (error || !session) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#0D0F12] p-6 text-center text-zinc-300">
-        <AlertTriangle className="h-12 w-12 text-amber-500 mb-3" />
-        <h1 className="text-xl font-bold text-white">Sessão Expirada ou Inválida</h1>
-        <p className="text-xs text-zinc-400 mt-2 max-w-sm">
-          {error || 'Este link expirou por segurança. Solicite um novo link pelo WhatsApp da barbearia.'}
+      <div className="min-h-screen bg-[#0B0D13] text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4 text-red-400">
+          <AlertTriangle className="h-8 w-8" />
+        </div>
+        <h1 className="text-xl font-bold mb-2">Link Expirado ou Inválido</h1>
+        <p className="text-zinc-400 max-w-sm mb-6 text-sm">
+          {error || 'Esta sessão de visagismo expirou por motivos de segurança.'}
         </p>
+        <button
+          onClick={() => router.push('/')}
+          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl transition-all"
+        >
+          Voltar ao Início
+        </button>
       </div>
     );
   }
@@ -360,67 +363,82 @@ export default function VisagismoSessionPage() {
   const shop = session.barbershop;
 
   return (
-    <div className="min-h-screen bg-[#0D0F12] text-zinc-100 flex flex-col items-center px-4 py-6 sm:py-10">
-      <div className="w-full max-w-lg space-y-6">
-        {/* Header Branding */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold">
-            <Scissors className="h-3.5 w-3.5" />
-            <span>Consultor de Visagismo • {shop?.name}</span>
+    <div className="min-h-screen bg-[#0B0D13] text-zinc-100 flex flex-col items-center">
+      {/* Top Header */}
+      <header className="w-full max-w-lg border-b border-zinc-800/80 bg-[#0B0D13]/80 backdrop-blur-md sticky top-0 z-30 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold">
+            <Scissors className="h-4 w-4" />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white uppercase">
-            Mude seu Visual
-          </h1>
-          <p className="text-xs text-zinc-400 max-w-xs mx-auto">
-            Descubra cortes, barbas e estilos que harmonizam com suas proporções.
-          </p>
+          <div>
+            <h1 className="text-sm font-bold text-white leading-none">Mude de Visual</h1>
+            <p className="text-[11px] text-zinc-400 mt-0.5">{shop?.name || 'BarberFlow'}</p>
+          </div>
         </div>
 
-        {/* Progress Bar (Steps 1 to 6) */}
-        <div className="w-full bg-zinc-900 h-1.5 rounded-full overflow-hidden">
-          <div
-            className="bg-gradient-to-r from-amber-500 to-amber-400 h-full transition-all duration-300"
-            style={{ width: `${(step / 6) * 100}%` }}
-          />
-        </div>
+        {photoPreview && (
+          <button
+            onClick={handleDeletePhoto}
+            title="Excluir minha foto (LGPD)"
+            className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-red-400 transition-colors"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </header>
 
-        {/* ========================================================================= */}
-        {/* STEP 1: BOAS-VINDAS */}
-        {/* ========================================================================= */}
+      {/* Main Container */}
+      <main className="w-full max-w-lg flex-1 p-4 pb-24 space-y-6">
+        {/* STEP 1: INTRODUÇÃO & BOAS-VINDAS */}
         {step === 1 && (
-          <div className="bg-[#14171F] border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6 text-center shadow-2xl">
-            <div className="h-20 w-20 mx-auto rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-400/5 flex items-center justify-center border border-amber-500/30">
-              <Sparkles className="h-10 w-10 text-amber-400" />
-            </div>
-
-            <div className="space-y-2">
-              <h2 className="text-xl font-bold text-white">Pronto para uma nova versão?</h2>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Em menos de 2 minutos vamos analisar suas preferências de rotina, formato facial e estilo para indicar os 3 melhores visuais para você.
+          <div className="space-y-6 pt-4">
+            <div className="text-center space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full">
+                Experiência de Visagismo
+              </span>
+              <h2 className="text-2xl sm:text-3xl font-black text-white">
+                Descubra o estilo que valoriza seus traços
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-400 max-w-xs mx-auto">
+                Análise geométrica facial combinada com inteligência artificial para sugerir e simular o corte e a barba ideais.
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 text-left">
-              <div className="bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800/80">
-                <span className="text-xl">📐</span>
-                <p className="text-[11px] font-semibold text-white mt-1">Harmonia</p>
-                <p className="text-[10px] text-zinc-500">Proporções faciais</p>
+            <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 mt-0.5">
+                  <Camera className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white">1. Tire uma selfie pelo celular</h3>
+                  <p className="text-[11px] text-zinc-400">Rápido e no seu navegador, sem envio de mídia no WhatsApp.</p>
+                </div>
               </div>
-              <div className="bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800/80">
-                <span className="text-xl">⏱️</span>
-                <p className="text-[11px] font-semibold text-white mt-1">Praticidade</p>
-                <p className="text-[10px] text-zinc-500">Tempo de rotina</p>
+
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 mt-0.5">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white">2. Receba 3 recomendações</h3>
+                  <p className="text-[11px] text-zinc-400">Harmonização para seu formato de rosto, barba e estilo.</p>
+                </div>
               </div>
-              <div className="bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800/80">
-                <span className="text-xl">💈</span>
-                <p className="text-[11px] font-semibold text-white mt-1">Execução</p>
-                <p className="text-[10px] text-zinc-500">Direto no barbeiro</p>
+
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 mt-0.5">
+                  <Scissors className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white">3. Simule no seu rosto e reserve</h3>
+                  <p className="text-[11px] text-zinc-400">Veja como fica em você com o comparativo Antes / Depois.</p>
+                </div>
               </div>
             </div>
 
             <button
               onClick={() => setStep(2)}
-              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all text-sm"
             >
               <span>Começar Visagismo</span>
               <ArrowRight className="h-4 w-4" />
@@ -428,443 +446,353 @@ export default function VisagismoSessionPage() {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* STEP 2: FOTO & CONSENTIMENTO */}
-        {/* ========================================================================= */}
+        {/* STEP 2: CÂMERA / GALERIA & CONFIRMAÇÃO DA FOTO */}
         {step === 2 && (
-          <div className="bg-[#14171F] border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
-            <div className="space-y-1 text-center">
-              <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Passo 1 de 5</span>
-              <h2 className="text-xl font-bold text-white">Sua Foto de Rosto</h2>
+          <div className="space-y-5 pt-2">
+            <div className="text-center space-y-1">
+              <h2 className="text-xl font-bold text-white">Foto para Análise</h2>
               <p className="text-xs text-zinc-400">
-                Tire uma selfie de frente com boa iluminação ou escolha da galeria.
+                Sua foto será usada exclusivamente para identificar suas proporções e simular o corte.
               </p>
             </div>
 
-            {/* Photo Preview / Upload Area */}
-            <div className="flex flex-col items-center">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handlePhotoChange}
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-              />
+            {/* Inputs Ocultos de Câmera Frontal e Galeria */}
+            <input
+              type="file"
+              ref={cameraInputRef}
+              accept="image/*"
+              capture="user"
+              onChange={handlePhotoSelect}
+              className="hidden"
+            />
+            <input
+              type="file"
+              ref={galleryInputRef}
+              accept="image/*"
+              onChange={handlePhotoSelect}
+              className="hidden"
+            />
 
-              {photoPreview ? (
-                <div className="relative group">
-                  <div className="h-44 w-44 rounded-3xl overflow-hidden border-2 border-amber-500/50 shadow-xl bg-black">
-                    <img src={photoPreview} alt="Sua Foto" className="h-full w-full object-cover" />
+            {/* Preview da Foto ou Seletor de Upload */}
+            {photoPreview ? (
+              <div className="space-y-4">
+                <div className="relative aspect-square max-w-[280px] mx-auto rounded-3xl overflow-hidden border-2 border-amber-500/50 shadow-2xl bg-zinc-950">
+                  <img
+                    src={photoPreview}
+                    alt="Sua foto selecionada"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                  <span className="absolute bottom-3 left-3 text-[10px] font-bold text-white bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-full border border-white/10">
+                    Sua Foto
+                  </span>
+                </div>
+
+                {/* Bloco de Confirmação: Essa foto está boa? */}
+                <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4 text-center space-y-3">
+                  <p className="text-xs font-bold text-white">Essa foto está boa?</p>
+                  <p className="text-[11px] text-zinc-400">
+                    Certifique-se de que seu rosto e cabelo estão bem visíveis, de frente e sem sombras fortes.
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhotoPreview(null);
+                        setPhotoFile(null);
+                      }}
+                      className="py-2.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs rounded-xl transition-all"
+                    >
+                      Escolher outra
+                    </button>
+                    <button
+                      type="button"
+                      disabled={uploadingPhoto}
+                      onClick={handleConfirmAndUploadPhoto}
+                      className="py-2.5 px-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50"
+                    >
+                      {uploadingPhoto ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Analisando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-3.5 w-3.5" />
+                          <span>Usar esta foto</span>
+                        </>
+                      )}
+                    </button>
                   </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Botões de Ação Câmera vs Galeria */}
+                <div className="grid grid-cols-2 gap-3">
                   <button
-                    onClick={handleDeletePhoto}
-                    className="absolute -top-2 -right-2 p-2 bg-red-600 hover:bg-red-500 text-white rounded-full shadow-lg transition-transform hover:scale-110"
-                    title="Excluir Foto"
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="p-6 bg-zinc-900/90 hover:bg-zinc-800/90 border border-zinc-800 rounded-3xl flex flex-col items-center justify-center gap-3 text-center transition-all group cursor-pointer shadow-lg hover:border-amber-500/40"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform">
+                      <Camera className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">Tirar Selfie</p>
+                      <p className="text-[10px] text-zinc-500 mt-0.5">Câmera frontal</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="p-6 bg-zinc-900/90 hover:bg-zinc-800/90 border border-zinc-800 rounded-3xl flex flex-col items-center justify-center gap-3 text-center transition-all group cursor-pointer shadow-lg hover:border-amber-500/40"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-300 group-hover:scale-110 transition-transform">
+                      <ImageIcon className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">Galeria</p>
+                      <p className="text-[10px] text-zinc-500 mt-0.5">Escolher arquivo</p>
+                    </div>
                   </button>
                 </div>
-              ) : (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="h-44 w-44 rounded-3xl border-2 border-dashed border-zinc-700 hover:border-amber-500 flex flex-col items-center justify-center p-4 cursor-pointer bg-zinc-900/40 hover:bg-zinc-900/80 transition-all text-center space-y-2 group"
-                >
-                  <div className="p-3 rounded-2xl bg-zinc-800 group-hover:bg-amber-500/20 text-zinc-400 group-hover:text-amber-400 transition-colors">
-                    <Camera className="h-8 w-8" />
-                  </div>
-                  <span className="text-xs font-semibold text-zinc-300">Tirar ou Enviar Foto</span>
-                  <span className="text-[10px] text-zinc-500">JPG, PNG ou WebP (max 5MB)</span>
-                </div>
-              )}
-            </div>
 
-            {/* Consentimento LGPD */}
-            <div className="bg-zinc-900/80 p-4 rounded-2xl border border-zinc-800 space-y-3">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={consent}
-                  onChange={(e) => setConsent(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded bg-zinc-800 border-zinc-700 text-amber-500 focus:ring-amber-500 focus:ring-offset-0"
-                />
-                <div className="text-[11px] text-zinc-300 leading-tight">
-                  <span className="font-semibold text-white">Privacidade & Consentimento (LGPD):</span> Concordo em utilizar minha foto exclusivamente para esta experiência de visagismo.
+                {/* Instruções para Boa Foto */}
+                <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-2xl p-3.5 space-y-2 text-xs">
+                  <p className="font-bold text-amber-400 flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4" />
+                    <span>Dicas para máxima precisão:</span>
+                  </p>
+                  <ul className="text-[11px] text-zinc-400 space-y-1 list-disc list-inside">
+                    <li>Foto frontal, olhando diretamente para a câmera</li>
+                    <li>Boa iluminação no rosto (sem sombras fortes)</li>
+                    <li>Sem óculos escuros, bonés ou filtros</li>
+                    <li>Rosto e cabelo completamente visíveis</li>
+                  </ul>
                 </div>
+              </div>
+            )}
+
+            {/* Termo de Consentimento LGPD */}
+            <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-2xl p-3 flex items-start gap-2.5">
+              <input
+                type="checkbox"
+                id="consent-checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-1 rounded bg-zinc-800 border-zinc-700 text-amber-500 focus:ring-0 focus:ring-offset-0"
+              />
+              <label htmlFor="consent-checkbox" className="text-[10px] text-zinc-400 leading-tight">
+                <span className="font-semibold text-white">Privacidade & LGPD:</span> Concordo em utilizar minha foto exclusivamente para esta experiência de visagismo. Você pode excluí-la a qualquer momento.
               </label>
-              <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-                <span>Sua foto é privada, expira em 24h e pode ser excluída a qualquer momento.</span>
-              </div>
             </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => setStep(1)}
-                className="px-4 py-3.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors"
-              >
-                Voltar
-              </button>
-              <button
-                onClick={handleUploadPhoto}
-                disabled={uploadingPhoto || (!photoPreview && !photoFile)}
-                className="flex-1 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-bold text-xs transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
-              >
-                {uploadingPhoto ? (
-                  <span>Salvando foto...</span>
-                ) : (
-                  <>
-                    <span>{photoPreview ? 'Continuar com a Foto' : 'Continuar'}</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* STEP 3: PERFIL DE VISAGISMO (5 PERGUNTAS) */}
-        {/* ========================================================================= */}
-        {step === 3 && (
-          <div className="bg-[#14171F] border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
-            <div className="space-y-1 text-center">
-              <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Passo 2 de 5</span>
-              <h2 className="text-xl font-bold text-white">Suas Preferências</h2>
-              <p className="text-xs text-zinc-400">Personalize o resultado para sua rotina e gosto.</p>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              {/* Pergunta 1: Objetivo */}
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-300">1. O que você gostaria de mudar?</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['Corte', 'Barba', 'Corte + Barba', 'Cor', 'Estilo completo', 'Nao sei'].map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => setObjective(opt)}
-                      className={`p-2.5 rounded-xl border text-center font-medium transition-all ${
-                        objective === opt
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-400'
-                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                      }`}
-                    >
-                      {opt === 'Corte + Barba' ? 'Corte + Barba' : opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Pergunta 2: Estilo */}
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-300">2. Qual estilo você mais se identifica?</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['Classico', 'Moderno', 'Executivo', 'Casual', 'Despojado', 'Degrade'].map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => setStyle(opt)}
-                      className={`p-2.5 rounded-xl border text-center font-medium transition-all ${
-                        style === opt
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-400'
-                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Pergunta 3: Nível de Mudança */}
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-300">3. Quanto você quer mudar?</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'Pouco', label: 'Pouco (Sutil)' },
-                    { id: 'Medio', label: 'Médio (Equilibrado)' },
-                    { id: 'Radical', label: 'Radical (Transformação)' },
-                  ].map((opt) => (
-                    <button
-                      key={opt.id}
-                      onClick={() => setChangeLevel(opt.id)}
-                      className={`p-2.5 rounded-xl border text-center font-medium transition-all ${
-                        changeLevel === opt.id
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-400'
-                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Pergunta 4: Manutenção Diária */}
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-300">4. Tempo diário para arrumar o cabelo:</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'Pouco', label: '⚡ Quase nada (Prático)' },
-                    { id: 'Medio', label: '👌 5 a 10 minutos' },
-                    { id: 'Bastante', label: '✨ Gosto de modelar' },
-                  ].map((opt) => (
-                    <button
-                      key={opt.id}
-                      onClick={() => setMaintenanceLevel(opt.id)}
-                      className={`p-2.5 rounded-xl border text-center font-medium transition-all ${
-                        maintenanceLevel === opt.id
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-400'
-                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Pergunta 5: Manter Comprimento */}
-              <div className="space-y-1.5">
-                <label className="font-semibold text-zinc-300">5. Quer manter o comprimento atual?</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['Sim', 'Nao', 'Tanto faz'].map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => setHairLength(opt)}
-                      className={`p-2.5 rounded-xl border text-center font-medium transition-all ${
-                        hairLength === opt
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-400'
-                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                      }`}
-                    >
-                      {opt === 'Nao' ? 'Não (Quero mais curto)' : opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setStep(2)}
-                className="px-4 py-3.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors"
-              >
-                Voltar
-              </button>
-              <button
-                onClick={() => setStep(4)}
-                className="flex-1 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
-              >
-                <span>Próximo: Formato do Rosto</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* STEP 4: FORMATO DE ROSTO */}
-        {/* ========================================================================= */}
-        {step === 4 && (
-          <div className="bg-[#14171F] border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
-            <div className="space-y-1 text-center">
-              <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Passo 3 de 5</span>
-              <h2 className="text-xl font-bold text-white">Formato do seu Rosto</h2>
-              <p className="text-xs text-zinc-400">
-                Selecione o formato que mais se aproxima do seu rosto.
-              </p>
-              {aiDetectedShape && (
-                <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-amber-500/15 to-amber-400/5 border border-amber-500/30 text-left flex items-start gap-2.5">
-                  <Sparkles className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-                  <div className="text-[11px] text-zinc-300">
-                    <p className="font-bold text-amber-400">Identificado pelo Google Gemini Vision:</p>
-                    <p className="text-zinc-300">{aiNotes || `Seu formato predominante detectado foi ${aiDetectedShape}. Você pode confirmar ou alterar abaixo.`}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-              {[
-                { id: 'Oval', label: 'Oval', icon: '🥚', desc: 'Proporcional e equilibrado' },
-                { id: 'Redondo', label: 'Redondo', icon: '⭕', desc: 'Largura e comprimento iguais' },
-                { id: 'Quadrado', label: 'Quadrado', icon: '🔲', desc: 'Mandíbula bem angular' },
-                { id: 'Retangular', label: 'Retangular', icon: '📱', desc: 'Comprido e reto' },
-                { id: 'Triangular', label: 'Triangular', icon: '🔺', desc: 'Mandíbula mais larga' },
-                { id: 'Coracao', label: 'Coração', icon: '🤍', desc: 'Testa larga e queixo fino' },
-              ].map((opt) => (
-                <div
-                  key={opt.id}
-                  onClick={() => setFaceShape(opt.id)}
-                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
-                    faceShape === opt.id
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-md'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800/80'
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="text-2xl">{opt.icon}</span>
-                    {faceShape === opt.id && <Check className="h-4 w-4 text-amber-400" />}
-                  </div>
-                  <div className="mt-2">
-                    <p className="font-bold text-white">{opt.label}</p>
-                    <p className="text-[10px] text-zinc-400">{opt.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Opção Não Sei */}
-            <div
-              onClick={() => setFaceShape('Nao sei')}
-              className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
-                faceShape === 'Nao sei'
-                  ? 'bg-amber-500/20 border-amber-500 text-amber-400'
-                  : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <HelpCircle className="h-4 w-4 text-amber-400" />
-                <span className="font-semibold text-zinc-200">Não sei o formato do meu rosto</span>
-              </div>
+            {!photoPreview && (
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsFaceModalOpen(true);
-                }}
-                className="text-[11px] text-amber-400 underline"
-              >
-                Ver guia ilustrado
-              </button>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
                 onClick={() => setStep(3)}
-                className="px-4 py-3.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors"
+                className="w-full py-2.5 text-xs text-zinc-500 hover:text-zinc-300 font-semibold text-center transition-colors"
               >
-                Voltar
+                Prefiro responder apenas o questionário sem foto →
               </button>
-              <button
-                onClick={() => setStep(5)}
-                className="flex-1 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
-              >
-                <span>Próximo: Cores & Tonalidades</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
+            )}
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* STEP 5: CORES & TONALIDADES */}
-        {/* ========================================================================= */}
-        {step === 5 && (
-          <div className="bg-[#14171F] border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
-            <div className="space-y-1 text-center">
-              <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Passo 4 de 5</span>
-              <h2 className="text-xl font-bold text-white">Tonalidade & Cor</h2>
-              <p className="text-xs text-zinc-400">Quer experimentar uma cor nova ou manter a original?</p>
+        {/* STEP 3, 4, 5: QUESTIONÁRIO DE PREFERÊNCIAS */}
+        {step >= 3 && step <= 5 && (
+          <div className="space-y-6 pt-2">
+            <div className="flex items-center justify-between text-xs text-zinc-400">
+              <span>Etapa {step - 1} de 4</span>
+              <span className="text-amber-400 font-bold">{faceShape} detectado</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 text-xs">
-              {[
-                { id: 'Natural', label: 'Tom Natural', desc: 'Realce e hidratação' },
-                { id: 'Castanho escuro', label: 'Castanho Escuro', desc: 'Sóbrio e marcante' },
-                { id: 'Castanho claro', label: 'Castanho Claro', desc: 'Ilumina o semblante' },
-                { id: 'Loiro', label: 'Loiro / Mechas', desc: 'Luzes ou descoloração' },
-                { id: 'Platinado', label: 'Platinado / Nevou', desc: 'Branco / Prata moderno' },
-                { id: 'Grisalho', label: 'Grisalho Matizado', desc: 'Camuflagem elegante' },
-                { id: 'Colorido', label: 'Colorido / Fantasia', desc: 'Estilo alternativo' },
-              ].map((opt) => (
-                <div
-                  key={opt.id}
-                  onClick={() => setColorPreference(opt.id)}
-                  className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
-                    colorPreference === opt.id
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-md'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800/80'
-                  }`}
-                >
-                  <p className="font-bold text-white">{opt.label}</p>
-                  <p className="text-[10px] text-zinc-400 mt-1">{opt.desc}</p>
+            {step === 3 && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-bold text-white">Qual é o seu objetivo principal?</h2>
+                  <p className="text-xs text-zinc-400">O que você quer transformar no seu visual?</p>
                 </div>
-              ))}
-            </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {['Corte', 'Barba', 'Corte + Barba', 'Estilo completo'].map((obj) => (
+                    <button
+                      key={obj}
+                      type="button"
+                      onClick={() => setObjective(obj)}
+                      className={`p-4 rounded-2xl border text-left transition-all ${
+                        objective === obj
+                          ? 'bg-amber-500 text-black border-amber-400 font-bold shadow-lg shadow-amber-500/20'
+                          : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
+                      }`}
+                    >
+                      <p className="text-xs">{obj}</p>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStep(4)}
+                  className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-2xl text-xs flex items-center justify-center gap-1.5 transition-all mt-4"
+                >
+                  <span>Continuar</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
 
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setStep(4)}
-                className="px-4 py-3.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors"
-              >
-                Voltar
-              </button>
-              <button
-                onClick={handleEvaluate}
-                disabled={evaluating}
-                className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 disabled:opacity-50 text-black font-extrabold text-sm transition-all shadow-xl shadow-amber-500/25 flex items-center justify-center gap-2"
-              >
-                {evaluating ? (
-                  <span>Calculando Visagismo...</span>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    <span>Ver Meu Novo Visual</span>
-                  </>
-                )}
-              </button>
-            </div>
+            {step === 4 && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-bold text-white">Qual estilo mais combina com sua rotina?</h2>
+                  <p className="text-xs text-zinc-400">Escolha o visual que você deseja transmitir.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {['Moderno', 'Classico', 'Executivo', 'Despojado', 'Degrade', 'Natural'].map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setStyle(st)}
+                      className={`p-4 rounded-2xl border text-left transition-all ${
+                        style === st
+                          ? 'bg-amber-500 text-black border-amber-400 font-bold shadow-lg shadow-amber-500/20'
+                          : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
+                      }`}
+                    >
+                      <p className="text-xs">{st}</p>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2.5 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setStep(3)}
+                    className="py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-2xl text-xs"
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStep(5)}
+                    className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-2xl text-xs flex items-center justify-center gap-1.5 transition-all"
+                  >
+                    <span>Continuar</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {step === 5 && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-bold text-white">Nível de Mudança e Manutenção</h2>
+                  <p className="text-xs text-zinc-400">Com que frequência você costuma ir à barbearia?</p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-zinc-400">Impacto da Transformação</label>
+                    <div className="grid grid-cols-3 gap-2 mt-1.5">
+                      {['Pouco', 'Medio', 'Radical'].map((lvl) => (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => setChangeLevel(lvl)}
+                          className={`py-2.5 px-2 rounded-xl border text-center text-xs font-semibold ${
+                            changeLevel === lvl
+                              ? 'bg-amber-500 text-black border-amber-400 font-bold'
+                              : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          {lvl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-zinc-400">Disponibilidade para Manutenção</label>
+                    <div className="grid grid-cols-3 gap-2 mt-1.5">
+                      {[
+                        { id: 'Pouco', label: 'A cada 30d' },
+                        { id: 'Medio', label: 'A cada 15-20d' },
+                        { id: 'Bastante', label: 'Toda semana' },
+                      ].map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setMaintenanceLevel(m.id)}
+                          className={`py-2.5 px-2 rounded-xl border text-center text-xs font-semibold ${
+                            maintenanceLevel === m.id
+                              ? 'bg-amber-500 text-black border-amber-400 font-bold'
+                              : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={evaluating}
+                  onClick={handleEvaluate}
+                  className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all mt-6 disabled:opacity-50"
+                >
+                  {evaluating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Harmonizando Traços com IA...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      <span>Ver Meus Cortes Recomendados</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* STEP 6: "MEU NOVO VISUAL" (RESULTADO FINAL) */}
-        {/* ========================================================================= */}
+        {/* STEP 6: RECOMENDAÇÕES & SIMULAÇÃO ANTES/DEPOIS (IA) */}
         {step === 6 && recommendations.length > 0 && (
-          <div className="space-y-6">
-            {/* Header de Sucesso */}
-            <div className="bg-gradient-to-tr from-amber-500/20 to-zinc-900 border border-amber-500/30 rounded-3xl p-6 text-center space-y-2 shadow-2xl">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold">
-                <Star className="h-3.5 w-3.5 fill-amber-400" />
-                <span>3 Recomendações Personalizadas</span>
-              </div>
-              <h2 className="text-2xl font-black text-white uppercase tracking-tight">
-                Seu Novo Visual ✂️
-              </h2>
-              <p className="text-xs text-zinc-300 max-w-sm mx-auto">
-                Harmonia calculada para rosto <strong>{faceShape}</strong> e estilo <strong>{style}</strong>.
-              </p>
-            </div>
-
-            {/* Recommendation Tabs (Top 1, 2, 3) */}
+          <div className="space-y-6 pt-2">
+            {/* Seletor do Top 3 Recomendações */}
             <div className="grid grid-cols-3 gap-2">
-              {recommendations.map((rec, idx) => (
+              {recommendations.slice(0, 3).map((rec, idx) => (
                 <button
                   key={idx}
-                  onClick={() => {
-                    setSelectedRecIndex(idx);
-                    triggerAiPreview(idx);
-                  }}
-                  className={`p-3 rounded-2xl border text-center transition-all ${
+                  type="button"
+                  onClick={() => setSelectedRecIndex(idx)}
+                  className={`p-2.5 rounded-2xl border text-left transition-all ${
                     selectedRecIndex === idx
                       ? 'bg-amber-500 text-black border-amber-400 font-bold shadow-lg shadow-amber-500/20'
-                      : 'bg-[#14171F] border-zinc-800 text-zinc-400 hover:bg-zinc-800'
+                      : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
                   }`}
                 >
-                  <p className="text-[10px] uppercase tracking-wider">{idx === 0 ? '🏆 Principal' : `Opção ${idx + 1}`}</p>
-                  <p className="text-xs font-bold truncate mt-0.5">{rec.haircutName}</p>
+                  <p className="text-[10px] uppercase font-bold tracking-wider">
+                    {idx === 0 ? '🥇 Principal' : idx === 1 ? '🥈 Opção 2' : '🥉 Opção 3'}
+                  </p>
+                  <p className="text-xs font-extrabold truncate mt-0.5">{rec.haircutName}</p>
                 </button>
               ))}
             </div>
 
-            {/* Selected Recommendation Card */}
+            {/* Card da Recomendação Selecionada */}
             {(() => {
               const current = recommendations[selectedRecIndex];
               const aiPreviewImg = aiPreviews[selectedRecIndex];
 
               return (
-                <div className="bg-[#14171F] border border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
-                  {/* Title & Score */}
+                <div className="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl">
+                  {/* Cabeçalho do Estilo */}
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider">
@@ -877,169 +805,170 @@ export default function VisagismoSessionPage() {
                     <Badge variant="warning">{current.score}% Match</Badge>
                   </div>
 
-                  {/* VISUAL SHOWCASE: FOTO ORIGINAL + SEU ROSTO COM NOVO CORTE (IA) */}
-                  <div className="space-y-2">
-                    <div className={`grid gap-3 ${photoPreview ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                      {/* Foto do Cliente (Original) */}
-                      {photoPreview && (
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
-                            <span>Sua Foto</span>
-                            <span className="text-amber-400 text-[9px] bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                              {faceShape}
-                            </span>
-                          </div>
-                          <div
-                            onClick={() =>
-                              setLightboxImage({
-                                url: photoPreview,
-                                title: 'Sua Foto Original',
-                                subtitle: `Formato de rosto identificado: ${faceShape}`,
-                              })
-                            }
-                            className="relative aspect-square rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900 shadow-inner group cursor-pointer"
-                          >
-                            <img
-                              src={photoPreview}
-                              alt="Sua foto original"
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                            <div className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white/80 group-hover:text-amber-400 transition-colors">
-                              <Maximize2 className="h-3.5 w-3.5" />
+                  {/* VISUAL SHOWCASE: SLIDER INTERATIVO ANTES/DEPOIS OU PREVIEW */}
+                  {photoPreview && aiPreviewImg ? (
+                    <BeforeAfterSlider
+                      originalImage={photoPreview}
+                      generatedImage={aiPreviewImg}
+                      haircutName={current.haircutName}
+                      faceShape={faceShape}
+                      onExpand={() =>
+                        setLightboxImage({
+                          url: aiPreviewImg,
+                          title: `${current.haircutName} — Você com o Novo Visual`,
+                          subtitle: `Simulação de IA aplicada com preservação de identidade`,
+                        })
+                      }
+                    />
+                  ) : (
+                    <div className="space-y-3">
+                      <div className={`grid gap-3 ${photoPreview ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        {/* Foto do Cliente */}
+                        {photoPreview && (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
+                              <span>Sua Foto</span>
+                              <span className="text-amber-400 text-[9px] bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                {faceShape}
+                              </span>
                             </div>
-                            <span className="absolute bottom-2 left-2 text-[9px] font-bold text-white bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10 flex items-center gap-1">
-                              <ZoomIn className="h-2.5 w-2.5" /> Original
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Foto com Corte Aplicado no Rosto (IA) ou Referência */}
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
-                          <span>{aiPreviewImg ? '✨ Você com o Corte (IA)' : 'Visual Recomendado'}</span>
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
-                            aiPreviewImg
-                              ? 'text-amber-400 bg-amber-500/15 border-amber-500/30 font-bold'
-                              : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
-                          }`}>
-                            {aiPreviewImg ? 'IA Aplicada' : 'Alta Definição'}
-                          </span>
-                        </div>
-
-                        {/* Card com Foto Gerada por IA ou Referência */}
-                        <div
-                          onClick={() => {
-                            const targetUrl = aiPreviewImg || current.referenceImageUrl;
-                            if (targetUrl) {
-                              setLightboxImage({
-                                url: targetUrl,
-                                title: `${current.haircutName} — ${current.haircutStyle}`,
-                                subtitle: aiPreviewImg
-                                  ? 'Visual gerado por inteligência artificial aplicado ao seu rosto'
-                                  : 'Referência fotográfica em alta definição',
-                              });
-                            }
-                          }}
-                          className={`relative ${photoPreview ? 'aspect-square' : 'aspect-video sm:aspect-[2/1]'} rounded-2xl overflow-hidden border ${
-                            aiPreviewImg ? 'border-amber-500 shadow-amber-500/20' : 'border-amber-500/30'
-                          } bg-zinc-900 shadow-xl group cursor-pointer`}
-                        >
-                          {generatingPreview && !aiPreviewImg ? (
-                            <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-950 p-4 text-center space-y-2">
-                              <Loader2 className="h-6 w-6 text-amber-400 animate-spin" />
-                              <p className="text-[11px] font-bold text-amber-300">Aplicando corte no seu rosto...</p>
-                              <p className="text-[9px] text-zinc-500">IA Replicate em processamento</p>
-                            </div>
-                          ) : (
-                            <>
+                            <div
+                              onClick={() =>
+                                setLightboxImage({
+                                  url: photoPreview,
+                                  title: 'Sua Foto Original',
+                                  subtitle: `Formato de rosto identificado: ${faceShape}`,
+                                })
+                              }
+                              className="relative aspect-square rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-inner group cursor-pointer"
+                            >
                               <img
-                                src={aiPreviewImg || current.referenceImageUrl || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=800&q=80'}
-                                alt={current.haircutName}
+                                src={photoPreview}
+                                alt="Sua foto original"
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                               />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none" />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
                               <div className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white/80 group-hover:text-amber-400 transition-colors">
                                 <Maximize2 className="h-3.5 w-3.5" />
                               </div>
-                              <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
-                                <span className="text-[9px] font-extrabold text-amber-300 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
-                                  <ZoomIn className="h-2.5 w-2.5" /> ✂️ {current.haircutName}
-                                </span>
-                                {aiPreviewImg && (
-                                  <span className="text-[8px] font-bold text-emerald-300 bg-emerald-950/80 backdrop-blur-sm px-1.5 py-0.5 rounded border border-emerald-500/30">
-                                    ✨ Face IA
-                                  </span>
-                                )}
-                              </div>
-                            </>
-                          )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Foto de Referência HD do Catálogo */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
+                            <span>Referência do Estilo</span>
+                            <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 text-[9px] px-1.5 py-0.5 rounded">
+                              Inspiração HD
+                            </span>
+                          </div>
+                          <div
+                            onClick={() => {
+                              if (current.referenceImageUrl) {
+                                setLightboxImage({
+                                  url: current.referenceImageUrl,
+                                  title: `${current.haircutName} — ${current.haircutStyle}`,
+                                  subtitle: 'Referência fotográfica em alta definição',
+                                });
+                              }
+                            }}
+                            className={`relative ${photoPreview ? 'aspect-square' : 'aspect-video'} rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-xl group cursor-pointer`}
+                          >
+                            <img
+                              src={current.referenceImageUrl || 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80'}
+                              alt={current.haircutName}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none" />
+                            <div className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white/80 group-hover:text-amber-400 transition-colors">
+                              <Maximize2 className="h-3.5 w-3.5" />
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
 
-                  {/* Detalhes de Barba e Cor */}
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800">
-                      <p className="text-[10px] text-zinc-500 uppercase font-semibold">Barba Sugerida</p>
-                      <p className="text-xs font-bold text-white mt-0.5">{current.beardName || 'Rosto Liso / Alinhada'}</p>
+                      {/* Botão para Disparar Inpainting Facial */}
+                      {photoPreview && !aiPreviewImg && (
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            disabled={generatingPreview || remainingGenerations <= 0}
+                            onClick={() => triggerAiPreview(selectedRecIndex)}
+                            className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50"
+                          >
+                            {generatingPreview ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span>Aplicando {current.haircutName} no seu rosto com IA...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="h-4 w-4" />
+                                <span>✨ Experimentar este visual no meu rosto</span>
+                              </>
+                            )}
+                          </button>
+                          <p className="text-[10px] text-zinc-500 text-center mt-1.5">
+                            Você possui <span className="text-amber-400 font-bold">{remainingGenerations}</span> simulações restantes nesta sessão.
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <div className="bg-zinc-900/80 p-3.5 rounded-2xl border border-zinc-800">
-                      <p className="text-[10px] text-zinc-500 uppercase font-semibold">Tonalidade</p>
-                      <p className="text-xs font-bold text-white mt-0.5">{current.hairColor || colorPreference}</p>
+                  )}
+
+                  {/* Detalhes de Barba e Cuidados */}
+                  <div className="grid grid-cols-2 gap-2.5 text-xs">
+                    <div className="bg-zinc-950/60 p-3 rounded-2xl border border-zinc-800">
+                      <p className="text-[10px] text-zinc-500 uppercase font-semibold">Barba Recomendada</p>
+                      <p className="text-xs font-bold text-white mt-0.5">{current.beardName || 'Alinhada / Por Fazer'}</p>
+                    </div>
+                    <div className="bg-zinc-950/60 p-3 rounded-2xl border border-zinc-800">
+                      <p className="text-[10px] text-zinc-500 uppercase font-semibold">Manutenção</p>
+                      <p className="text-xs font-bold text-white mt-0.5">{current.maintenance}</p>
                     </div>
                   </div>
 
                   {/* Justificativa do Visagismo */}
-                  <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800/80 space-y-1.5 text-xs">
+                  <div className="bg-zinc-950/40 p-4 rounded-2xl border border-zinc-800/80 space-y-1.5 text-xs">
                     <p className="font-bold text-amber-400 flex items-center gap-1.5">
-                      <span>💡 Por que combina com você:</span>
+                      <span>💡 Por que recomendamos este estilo para você:</span>
                     </p>
-                    <p className="text-zinc-300 leading-relaxed">{current.reasoning}</p>
+                    <p className="text-zinc-300 leading-relaxed text-[11px]">{current.reasoning}</p>
                   </div>
 
-                  {/* Dica do Barbeiro */}
-                  <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800/80 space-y-1 text-xs">
-                    <p className="font-bold text-zinc-300">💈 Dica de finalização:</p>
-                    <p className="text-zinc-400">{current.barberTips}</p>
-                  </div>
-
-                  {/* CTAs de Ação */}
-                  <div className="space-y-3 pt-2">
+                  {/* Ações Finais: Quero Esse Visual & Agendamento */}
+                  <div className="space-y-2.5 pt-2">
                     <button
+                      type="button"
+                      disabled={actionLoading !== null}
                       onClick={() => handleSelectAndAction('APPOINTMENT')}
-                      className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-sm transition-all shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2"
+                      className="w-full py-4 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-2xl text-sm flex items-center justify-center gap-2 shadow-xl shadow-amber-500/25 transition-all"
                     >
-                      <Calendar className="h-4 w-4" />
-                      <span>Quero esse visual — Agendar Horário</span>
+                      {actionLoading === 'APPOINTMENT' ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <>
+                          <Calendar className="h-5 w-5" />
+                          <span>✨ QUERO ESSE VISUAL — AGENDAR HORÁRIO</span>
+                        </>
+                      )}
                     </button>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => handleSelectAndAction('WHATSAPP')}
-                        className="py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/20"
-                      >
-                        <MessageSquare className="h-4 w-4" />
-                        <span>Enviar ao Barbeiro</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleSelectAndAction('SAVE')}
-                        className="py-3.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <Share2 className="h-4 w-4" />
-                        <span>{savedFeedback ? 'Salvo!' : 'Salvar / Compartilhar'}</span>
-                      </button>
-                    </div>
-
                     <button
-                      onClick={() => setStep(3)}
-                      className="w-full py-2.5 text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center justify-center gap-1"
+                      type="button"
+                      disabled={actionLoading !== null}
+                      onClick={() => handleSelectAndAction('WHATSAPP')}
+                      className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold rounded-2xl text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-all"
                     >
-                      <RotateCcw className="h-3 w-3" />
-                      <span>Experimentar outras opções</span>
+                      {actionLoading === 'WHATSAPP' ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <MessageSquare className="h-4 w-4 text-emerald-400" />
+                          <span>Compartilhar Escolha no WhatsApp</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1047,75 +976,29 @@ export default function VisagismoSessionPage() {
             })()}
           </div>
         )}
+      </main>
 
-        {/* Modal de Guia de Formatos de Rosto */}
-        <Modal
-          isOpen={isFaceModalOpen}
-          onClose={() => setIsFaceModalOpen(false)}
-          title="Guia de Formatos Faciais"
-        >
-          <div className="space-y-4 text-xs text-zinc-300 max-h-[70vh] overflow-y-auto pr-1">
-            <p className="text-zinc-400 leading-relaxed">
-              Observe seu rosto em frente ao espelho com o cabelo puxado para trás:
-            </p>
-            {guides?.faceShapes &&
-              Object.entries(guides.faceShapes).map(([shape, info]: [string, any]) => (
-                <div key={shape} className="bg-zinc-900 p-3.5 rounded-2xl border border-zinc-800 space-y-1">
-                  <p className="font-bold text-white flex items-center gap-1.5">
-                    <span>{info.icon}</span>
-                    <span>{info.title}</span>
-                  </p>
-                  <p className="text-zinc-400 text-[11px]">{info.description}</p>
-                  <p className="text-amber-400 text-[10px] font-semibold">{info.characteristics}</p>
-                </div>
-              ))}
-          </div>
-        </Modal>
-
-        {/* ========================================================================= */}
-        {/* LIGHTBOX: EXPANSÃO DE FOTOS EM TELA CHEIA (ZOOM) */}
-        {/* ========================================================================= */}
-        {lightboxImage && (
-          <div
-            onClick={() => setLightboxImage(null)}
-            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-center p-4 animate-in fade-in duration-200"
-          >
-            {/* Top Bar */}
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg flex items-center justify-between p-3 mb-2 rounded-2xl bg-zinc-900/90 border border-zinc-800 text-white"
-            >
-              <div>
-                <p className="font-extrabold text-sm text-white">{lightboxImage.title}</p>
-                {lightboxImage.subtitle && (
-                  <p className="text-[11px] text-zinc-400">{lightboxImage.subtitle}</p>
-                )}
-              </div>
-              <button
-                onClick={() => setLightboxImage(null)}
-                className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Main Image Frame */}
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="relative max-w-lg max-h-[75vh] w-full rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl bg-black flex items-center justify-center"
-            >
+      {/* LIGHTBOX ZOOM MODAL */}
+      <Modal
+        isOpen={lightboxImage !== null}
+        onClose={() => setLightboxImage(null)}
+        title={lightboxImage?.title || 'Visual em Alta Resolução'}
+      >
+        <div className="space-y-4">
+          <div className="relative aspect-square sm:aspect-[4/3] rounded-2xl overflow-hidden bg-zinc-950 border border-zinc-800">
+            {lightboxImage && (
               <img
                 src={lightboxImage.url}
                 alt={lightboxImage.title}
-                className="w-full h-auto max-h-[75vh] object-contain"
+                className="w-full h-full object-contain"
               />
-            </div>
-
-            {/* Bottom Dismiss Hint */}
-            <p className="text-zinc-500 text-xs mt-3">Toque fora ou no X para fechar</p>
+            )}
           </div>
-        )}
-      </div>
+          {lightboxImage?.subtitle && (
+            <p className="text-xs text-zinc-400 text-center">{lightboxImage.subtitle}</p>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

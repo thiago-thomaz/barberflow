@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   Scissors,
   MapPin,
@@ -22,7 +22,12 @@ import { Modal } from '@/components/UI/Modal';
 export default function PublicBookingPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const slug = params.slug as string;
+
+  const visagismCorte = searchParams.get('corte');
+  const visagismEstilo = searchParams.get('estilo');
+  const visagismBarba = searchParams.get('barba');
 
   const [shop, setShop] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -35,7 +40,9 @@ export default function PublicBookingPage() {
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
-  const [notes, setNotes] = useState<string>('');
+  const [notes, setNotes] = useState<string>(
+    visagismCorte ? `[Visual Escolhido: ${visagismCorte}${visagismEstilo ? ` - ${visagismEstilo}` : ''}${visagismBarba ? ` | Barba: ${visagismBarba}` : ''}]` : ''
+  );
 
   // Available slots for selected date & service
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
@@ -195,6 +202,26 @@ export default function PublicBookingPage() {
             )}
           </div>
         </div>
+
+        {/* Visagismo Inspiration Banner */}
+        {visagismCorte && (
+          <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent border border-amber-500/30 rounded-2xl p-3.5 flex items-center justify-between shadow-lg">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500 text-black flex items-center justify-center font-bold shadow-md">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider font-extrabold text-amber-400">Visual Escolhido no Visagismo</p>
+                <p className="text-xs font-bold text-white">
+                  {visagismCorte} {visagismEstilo ? `• ${visagismEstilo}` : ''}
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+              Anexado
+            </span>
+          </div>
+        )}
 
         {/* Step Indicator */}
         {step < 5 && (

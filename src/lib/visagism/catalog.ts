@@ -45,6 +45,9 @@ export const FACE_SHAPES_GUIDE: Record<FaceShape, { title: string; description: 
   },
 };
 
+const BASE_NEGATIVE_PROMPT =
+  'different person, new face, altered eyes, altered nose, altered mouth, changed facial structure, changed skin tone, face replacement, deformed face, unrealistic facial features, cartoon, illustration, 3d render, blurry, distorted, low quality, deformed ears';
+
 export const HAIRCUTS_CATALOG: HaircutItem[] = [
   {
     id: 'low-fade',
@@ -59,6 +62,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'degrade', 'fade', 'social'],
     stylingTips: 'Manutenção a cada 15 a 20 dias para manter a transição limpa.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a realistic men's low fade haircut with smooth temple taper and natural top hair volume. Preserve exact facial identity, eyes, nose, mouth and facial structure. Photorealistic, ultra-detailed hair texture, professional barber finish.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'mid-fade',
@@ -73,6 +79,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'degrade', 'fade', 'moderno'],
     stylingTips: 'Excelente para quem quer presença marcante sem perder elegância.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a stylish men's mid fade haircut with clean gradient transition on the sides and styled top. Preserve exact facial identity, eyes, nose, mouth and skin. Photorealistic, crisp natural hairline.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'high-fade',
@@ -87,6 +96,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'high fade', 'degrade'],
     stylingTips: 'Exige manutenção frequente (10 a 15 dias) para preservar o contraste nítido.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a sharp men's high fade haircut with high-contrast short sides and textured top. Preserve original face and facial identity completely. Photorealistic barber finish.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'skin-fade',
@@ -101,6 +113,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['navalhado', 'corte', 'fade'],
     stylingTips: 'Finalize com loção pós-barba nas laterais e pomada matte no topo.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a precision skin fade razor haircut, tapering smoothly down to clean skin on the lower sides with natural top. Preserve original face, eyes and identity.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'taper-fade',
@@ -115,6 +130,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'social', 'classico', 'taper'],
     stylingTips: 'Perfeito para ambientes formais e quem prefere maior intervalo entre cortes.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a classic men's taper fade haircut, keeping density on sides with subtle temple and neckline fade. Preserve exact facial identity, eyes and proportions.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'buzz-cut',
@@ -129,6 +147,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['maquina', 'corte militar', 'corte'],
     stylingTips: 'Zero trabalho diário para pentear; ideal para rotinas aceleradas.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply an even, clean military buzz cut with neat hairline contour. Preserve original face, facial skin and identity 100%.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'crew-cut',
@@ -143,6 +164,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['social', 'corte', 'executivo'],
     stylingTips: 'Finalização rápida com pouco creme ou pasta modeladora.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a neat classic crew cut with short tapered sides and slight lift in the front hairline. Preserve exact facial identity and features.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'french-crop',
@@ -157,6 +181,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'crop', 'moderno'],
     stylingTips: 'Use pó modelador ou pomada matte para criar textura sem brilho.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a textured French crop haircut with short blunt fringe in front and faded sides. Preserve exact facial identity, eyes and nose.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'textured-crop',
@@ -171,6 +198,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'texturizado', 'fade'],
     stylingTips: 'Excelente para dar movimento a cabelos lisos ou levemente ondulados.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a modern textured crop haircut with low fade sides and piecy matte texture on top. Preserve original face and identity.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'pompadour',
@@ -185,6 +215,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'pompadour', 'corte premium'],
     stylingTips: 'Secador e escova redonda para dar estrutura, seguido de pomada pomade com brilho médio.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a voluminous classic pompadour haircut swept upward and back with neat tapered sides. Preserve original face and facial identity.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'quiff',
@@ -199,6 +232,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'quiff', 'moderno'],
     stylingTips: 'Secador apontando para cima com fixação matte flexível.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a stylish modern quiff haircut with textured upward sweep in front and clean mid taper. Preserve exact original face, eyes and identity.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'slick-back',
@@ -213,6 +249,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'social', 'executivo'],
     stylingTips: 'Funciona muito bem com pomadas à base de água de fixação média a forte.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a sleek slicked back hairstyle combed straight back with clean silhouette and defined temples. Preserve original face and identity.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'side-part',
@@ -227,6 +266,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte social', 'corte tradicional', 'corte'],
     stylingTips: 'Pente fino para assentar a linha de divisão e pomada clássica.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a gentlemen's side part haircut with precise parting line and well-groomed finish. Preserve original face and facial identity.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'corte-social',
@@ -241,6 +283,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte social', 'corte', 'tradicional'],
     stylingTips: 'Extremamente prático no dia a dia, combina com qualquer ocasião.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a clean traditional men's social haircut with neat scissor-trimmed sides and proportionate top. Preserve original facial identity and skin.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'corte-executivo',
@@ -255,6 +300,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'social', 'barba'],
     stylingTips: 'Manutenção mensal e hidratação leve periódica.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a refined contemporary executive haircut with elegant scissor blend and tidy contours. Preserve exact face and identity.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'long-hair-layers',
@@ -269,6 +317,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte longo', 'corte', 'lavagem'],
     stylingTips: 'Leave-in hidratante e secagem natural para preservar o balanço.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1519764622345-23439dd774f7?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a layered medium-to-long men's hairstyle with natural flow and shoulder-grazing texture. Preserve original face and identity.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'curly-fade',
@@ -283,6 +334,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'cachos', 'fade'],
     stylingTips: 'Ativador de cachos e esponja twist ou fitagem para definição duradoura.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply defined natural curly hair volume on top with clean sharp taper fade on sides and back. Preserve original face and facial identity.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
   {
     id: 'corte-despojado-surfer',
@@ -297,6 +351,9 @@ export const HAIRCUTS_CATALOG: HaircutItem[] = [
     suggestedServiceKeywords: ['corte', 'tesoura', 'textura'],
     stylingTips: 'Spray de sal marinho (sea salt spray) para volume texturizado natural.',
     referenceImageUrl: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=800&q=80',
+    stylePrompt: "Edit the existing person's hairstyle. Apply a relaxed medium flow surfer haircut swept back with natural wavy movement. Preserve exact original face, facial structure and skin.",
+    negativePrompt: BASE_NEGATIVE_PROMPT,
+    maskType: 'hair',
   },
 ];
 
