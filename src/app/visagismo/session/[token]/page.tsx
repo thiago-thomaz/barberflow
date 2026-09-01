@@ -125,16 +125,17 @@ export default function VisagismoSessionPage() {
       });
 
       const data = await res.json();
-      if (res.ok && data.previewUrl) {
+      if (res.ok && data.success && data.previewUrl) {
         setAiPreviews((prev) => ({ ...prev, [recIndex]: data.previewUrl }));
         if (typeof data.remainingGenerations === 'number') {
           setRemainingGenerations(data.remainingGenerations);
         }
-      } else if (!res.ok) {
-        alert(data.message || 'Não foi possível gerar a simulação no momento.');
+      } else {
+        alert(data.message || data.error || 'Não foi possível gerar a simulação no momento.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Erro ao gerar inpainting facial:', err);
+      alert('Erro de conexão ao gerar simulação. Tente novamente.');
     } finally {
       setGeneratingPreview(false);
     }

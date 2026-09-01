@@ -35,10 +35,10 @@ function getReplicateToken(): string {
 export class ReplicateInpaintingVisagismProvider implements VisagismImageProvider {
   name = 'REPLICATE_SDXL_INPAINTING';
 
-  // SDXL Inpainting Version Hash
+  // SD Inpainting Official Version Hash
   private readonly modelVersion =
     process.env.REPLICATE_INPAINT_MODEL_VERSION ||
-    '95b7223104132402a9ae84cc67741f33b24660d29daea3af70e07a371f119304';
+    '95b7223104132402a9ae91cc677285bc5eb997834bd2349fa486f53910fd68b3';
 
   async generatePreview(input: GeneratePreviewInput): Promise<GeneratePreviewResult | null> {
     const startTime = Date.now();
