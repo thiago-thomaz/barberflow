@@ -1,50 +1,89 @@
 import zlib from 'zlib';
 import type { MaskMode } from './types.ts';
+import type { FaceGeometry } from './face-detector.ts';
 
 export interface MaskGeneratorOptions {
   mode?: MaskMode;
   includeBeard?: boolean;
-  hairCoverageTop?: number; // percentual do topo (padrão 0.32)
-  hairlineArch?: number;    // curvatura da linha da testa (padrão 0.06)
+  geometry?: FaceGeometry;
 }
 
 /**
- * ZONA DE PROTEÇÃO FACIAL ESTRITA (FACE_PROTECTED_REGION)
- * Retorna true se a coordenada normalizada pertencer a regiões anatômicas vitais que NUNCA devem ser pintadas.
+ * Verifica se uma coordenada (x, y) está dentro da ZONA DE PROTEÇÃO FACIAL ESTRITA.
+ * A zona é calculada dinamicamente a partir dos marcos da FaceGeometry.
+ * 
+ * Regiões 100% Protegidas:
+ * 1. Olhos e Sobrancelhas
+ * 2. Ponte Nasal e Nariz
+ * 3. Lábios, Boca e Dentes
+ * 4. Centro Facial (Triângulo Ocular-Labial)
  */
 export function isFaceProtectedRegion(
-  normX: number, // 0 (esquerda) a 1 (direita)
-  normY: number  // 0 (topo) a 1 (base)
+  normX: number,
+  normY: number,
+  geometry?: FaceGeometry
 ): boolean {
+  if (geometry) {
+    const x = normX * geometry.imageWidth;
+    const y = normY * geometry.imageHeight;
+    const fb = geometry.faceBox;
+
+    // Se estiver fora da caixa facial geral, não é o núcleo do rosto
+    if (x < fb.x || x > fb.x + fb.width || y < fb.y || y > fb.y + fb.height) {
+      return false;
+    }
+
+    const distFromCenterX = Math.abs(x - geometry.centerX);
+
+    // 1. Olhos e Sobrancelhas (faixa vertical em torno da linha dos olhos)
+    const eyeTop = geometry.eyeLineY - fb.height * 0.16;
+    const eyeBottom = geometry.eyeLineY + fb.height * 0.10;
+    if (y >= eyeTop && y <= eyeBottom && distFromCenterX <= fb.width * 0.40) {
+      return true;
+    }
+
+    // 2. Nariz e Dorso Nasal (entre os olhos e a ponta do nariz)
+    const noseTop = geometry.eyeLineY + fb.height * 0.05;
+    const noseBottom = geometry.noseTipY + fb.height * 0.08;
+    if (y >= noseTop && y <= noseBottom && distFromCenterX <= fb.width * 0.22) {
+      return true;
+    }
+
+    // 3. Boca, Lábios e Dentes (em torno da linha da boca)
+    const mouthTop = geometry.mouthY - fb.height * 0.12;
+    const mouthBottom = geometry.mouthY + fb.height * 0.10;
+    if (y >= mouthTop && y <= mouthBottom && distFromCenterX <= fb.width * 0.26) {
+      return true;
+    }
+
+    // 4. Centro Facial Geral (pele central entre olhos e boca)
+    if (y >= eyeTop && y <= mouthBottom && distFromCenterX <= fb.width * 0.20) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // Fallback para coordenadas normalizadas caso geometria não esteja presente
   const distFromCenterX = Math.abs(normX - 0.5);
 
-  // 1. Região dos Olhos e Sobrancelhas (Y: 24% a 44%, X: dentro de 65% da largura central)
-  if (normY >= 0.24 && normY <= 0.44 && distFromCenterX <= 0.32) {
-    return true;
-  }
-
-  // 2. Região do Nariz e Ponte Nasal (Y: 38% a 58%, X: dentro de 35% da largura central)
-  if (normY >= 0.38 && normY <= 0.58 && distFromCenterX <= 0.18) {
-    return true;
-  }
-
-  // 3. Região da Boca, Lábios e Dentes (Y: 56% a 74%, X: dentro de 40% da largura central)
-  if (normY >= 0.56 && normY <= 0.74 && distFromCenterX <= 0.22) {
-    return true;
-  }
-
-  // 4. Centro Facial Geral (Triângulo dos Olhos até a Boca)
-  if (normY >= 0.26 && normY <= 0.74 && distFromCenterX <= 0.16) {
-    return true;
-  }
+  // Olhos e Sobrancelhas
+  if (normY >= 0.24 && normY <= 0.44 && distFromCenterX <= 0.32) return true;
+  // Nariz
+  if (normY >= 0.38 && normY <= 0.58 && distFromCenterX <= 0.18) return true;
+  // Boca e lábios
+  if (normY >= 0.56 && normY <= 0.74 && distFromCenterX <= 0.22) return true;
+  // Centro facial
+  if (normY >= 0.26 && normY <= 0.74 && distFromCenterX <= 0.16) return true;
 
   return false;
 }
 
 /**
- * Cria um PNG monocromático (8-bit grayscale) em memória com máscara conservadora e proteção facial estrita.
- * Branco (255) = Área a ser editada pela IA (cabelo e/ou barba)
- * Preto (0)   = Área protegida (olhos, sobrancelhas, nariz, boca, pele facial central, fundo)
+ * Gera um buffer PNG monocromático (8-bit grayscale) com a máscara de inpainting.
+ * 
+ * Branco (255) = Área a ser editada (cabelo ou barba conforme o modo)
+ * Preto (0)   = Área rigorosamente protegida (olhos, nariz, boca, pele, fundo)
  */
 export function generateHairMaskPNG(
   width: number = 768,
@@ -52,43 +91,46 @@ export function generateHairMaskPNG(
   options: MaskGeneratorOptions = {}
 ): Buffer {
   const mode: MaskMode = options.mode || (options.includeBeard ? 'HAIR_AND_BEARD' : 'HAIR_ONLY');
-  const hairCoverageTop = options.hairCoverageTop || 0.32;
-  const hairlineArch = options.hairlineArch || 0.06;
+  const geom = options.geometry;
 
   const rowBytes = width + 1;
   const rawData = Buffer.alloc(height * rowBytes, 0);
 
-  const centerX = width / 2;
-  const hairBottomY = height * hairCoverageTop;
-  const beardTopY = height * 0.76;
-  const beardBottomY = height * 0.96;
+  // Parâmetros dinâmicos ou proporcionais
+  const centerX = geom ? geom.centerX : width / 2;
+  const hairlineY = geom ? geom.hairlineY : height * 0.28;
+  const skullTopY = geom ? geom.skullTopY : Math.max(0, height * 0.04);
+  const mouthY = geom ? geom.mouthY : height * 0.70;
+  const chinY = geom ? geom.chinY : height * 0.88;
+  const faceWidth = geom ? geom.faceBox.width : width * 0.56;
 
   for (let y = 0; y < height; y++) {
     const rowOffset = y * rowBytes;
-    rawData[rowOffset] = 0; // Filter type 0 (None)
+    rawData[rowOffset] = 0; // PNG Filter Type 0 (None)
     const normY = y / height;
 
     for (let x = 0; x < width; x++) {
       const normX = x / width;
       let isMasked = false;
 
-      // Se estiver na FACE_PROTECTED_REGION, força 0 (Preto / Protegido)
-      if (!isFaceProtectedRegion(normX, normY)) {
+      // Se a coordenada estiver na Face Protected Region, ela é 0 (Preto / 100% Protegido)
+      if (!isFaceProtectedRegion(normX, normY, geom)) {
+        const distFromCenter = Math.abs(x - centerX);
+
         // 1. CABELO (HAIR_ONLY ou HAIR_AND_BEARD)
         if (mode === 'HAIR_ONLY' || mode === 'HAIR_AND_BEARD') {
-          // Curva suave em arco sobre a testa (acima das sobrancelhas)
-          const archOffset = Math.sin(Math.PI * Math.max(0, Math.min(1, normX))) * (height * hairlineArch);
-          const currentHairLine = hairBottomY - archOffset;
+          // Arco superior da testa acima da linha dos olhos/sobrancelhas
+          const archHeight = (hairlineY - skullTopY) * 0.25;
+          const normalizedDist = Math.min(1.0, distFromCenter / (faceWidth * 0.55));
+          const archOffset = Math.sin(Math.PI * normalizedDist) * archHeight;
+          const currentHairline = hairlineY - archOffset;
 
-          if (y < currentHairLine) {
-            const distFromCenter = Math.abs(x - centerX);
-            if (distFromCenter < width * 0.46) {
-              isMasked = true;
-            }
-          } else if (y < height * 0.42) {
-            // Têmporas laterais (sem invadir a testa central)
-            const distFromCenter = Math.abs(x - centerX);
-            if (distFromCenter > width * 0.30 && distFromCenter < width * 0.46) {
+          // Região do topo da cabeça e transição do corte
+          if (y >= skullTopY && y < currentHairline && distFromCenter < faceWidth * 0.65) {
+            isMasked = true;
+          } else if (y >= currentHairline && y < (geom ? geom.eyeLineY - 10 : height * 0.35)) {
+            // Têmporas e costeletas superiores (sem invadir a testa central)
+            if (distFromCenter > faceWidth * 0.34 && distFromCenter < faceWidth * 0.65) {
               isMasked = true;
             }
           }
@@ -96,12 +138,18 @@ export function generateHairMaskPNG(
 
         // 2. BARBA (BEARD_ONLY ou HAIR_AND_BEARD)
         if (mode === 'BEARD_ONLY' || mode === 'HAIR_AND_BEARD') {
-          if (y >= beardTopY && y <= beardBottomY) {
-            const distFromCenter = Math.abs(x - centerX);
-            // Queixo inferior e contorno do maxilar, protegendo a boca
-            if (distFromCenter < width * 0.40 && y > height * 0.78) {
+          // A barba começa abaixo do lábio inferior ou nas laterais do maxilar
+          const beardStartY = mouthY + (chinY - mouthY) * 0.35;
+          const beardEndY = Math.min(height - 1, chinY + (chinY - mouthY) * 0.50);
+
+          if (y >= beardStartY && y <= beardEndY) {
+            // Região do queixo e mandíbula inferior
+            if (distFromCenter < faceWidth * 0.55) {
               isMasked = true;
-            } else if (distFromCenter > width * 0.22 && distFromCenter < width * 0.40) {
+            }
+          } else if (y >= (geom ? geom.noseTipY : height * 0.55) && y < beardStartY) {
+            // Laterais da barba (bochechas externas e costeletas), longe do nariz e lábios
+            if (distFromCenter > faceWidth * 0.28 && distFromCenter < faceWidth * 0.58) {
               isMasked = true;
             }
           }
@@ -122,8 +170,8 @@ export function generateHairMaskPNG(
   const ihdrData = Buffer.alloc(13);
   ihdrData.writeUInt32BE(width, 0);
   ihdrData.writeUInt32BE(height, 4);
-  ihdrData.writeUInt8(8, 8); // 8 bits per pixel
-  ihdrData.writeUInt8(0, 9); // Color type: 0 (Grayscale)
+  ihdrData.writeUInt8(8, 8); // 8 bits por pixel
+  ihdrData.writeUInt8(0, 9); // Grayscale
   ihdrData.writeUInt8(0, 10);
   ihdrData.writeUInt8(0, 11);
   ihdrData.writeUInt8(0, 12);
@@ -144,9 +192,10 @@ export function generateHairMaskPNG(
 export function generateMaskByMode(
   mode: MaskMode,
   width: number = 768,
-  height: number = 1024
+  height: number = 1024,
+  geometry?: FaceGeometry
 ): Buffer {
-  return generateHairMaskPNG(width, height, { mode });
+  return generateHairMaskPNG(width, height, { mode, geometry });
 }
 
 function createPNGChunk(type: string, data: Buffer): Buffer {

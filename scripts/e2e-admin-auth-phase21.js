@@ -23,9 +23,13 @@ function verifyTokenTest(token) {
   }
 }
 
-function getPostLoginRedirectTest(user) {
-  if (!user) return '/dashboard';
-  if (user.role === 'SUPER_ADMIN') return '/admin';
+function getPostLoginRedirectTest(user, callbackUrl) {
+  if (callbackUrl && callbackUrl.startsWith('/admin') && user?.role === 'SUPER_ADMIN') {
+    return callbackUrl;
+  }
+  if (callbackUrl && !callbackUrl.startsWith('/admin')) {
+    return callbackUrl;
+  }
   return '/dashboard';
 }
 
@@ -81,10 +85,12 @@ async function runE2E() {
   console.log('   ✅ Sessão JWT criada com role SUPER_ADMIN.');
 
   // 3. Post-Login Redirection Resolution
-  console.log('3. [SUPER_ADMIN] Calculando rota pós-login...');
-  const adminRedirect = getPostLoginRedirectTest(session);
-  assert.strictEqual(adminRedirect, '/admin', 'SUPER_ADMIN deve ser redirecionado para /admin');
-  console.log(`   ✅ Rota pós-login resolvida: "${adminRedirect}"`);
+  console.log('3. [SUPER_ADMIN] Calculando rota pós-login padrão e com callbackUrl...');
+  const defaultRedirect = getPostLoginRedirectTest(session);
+  assert.strictEqual(defaultRedirect, '/dashboard', 'Login padrão deve sempre ir para a barbearia (/dashboard)');
+  const adminRedirect = getPostLoginRedirectTest(session, '/admin');
+  assert.strictEqual(adminRedirect, '/admin', 'SUPER_ADMIN com callbackUrl=/admin deve ir para /admin');
+  console.log(`   ✅ Rota pós-login padrão: "${defaultRedirect}" | Callback /admin: "${adminRedirect}"`);
 
   // 4. Server Guard Protection
   console.log('4. [SUPER_ADMIN] Testando Server-Side Guard requireSuperAdmin()...');
@@ -121,8 +127,9 @@ async function runE2E() {
   console.log('6. [SUPER_ADMIN] Simulando Refresh de página (F5)...');
   const refreshedSession = verifyTokenTest(token);
   assert.strictEqual(refreshedSession.role, 'SUPER_ADMIN');
-  assert.strictEqual(getPostLoginRedirectTest(refreshedSession), '/admin');
-  console.log('   ✅ Sessão persiste como SUPER_ADMIN e mantém rota /admin no refresh.');
+  assert.strictEqual(getPostLoginRedirectTest(refreshedSession), '/dashboard');
+  assert.strictEqual(getPostLoginRedirectTest(refreshedSession, '/admin'), '/admin');
+  console.log('   ✅ Sessão persiste como SUPER_ADMIN e respeita rotas no refresh.');
 
   // 7. OWNER / Tenant User Flow
   console.log('\n7. [OWNER] Testando autenticação de Dono de Barbearia (Tenant)...');

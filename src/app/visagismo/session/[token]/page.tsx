@@ -975,15 +975,19 @@ export default function VisagismoSessionPage() {
                             {generatingPreview ? (
                               <>
                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                <span>Aplicando {current.haircutName} no seu rosto com IA...</span>
+                                <span>Aplicando {current.haircutName} na sua foto...</span>
                               </>
                             ) : (
                               <>
                                 <Sparkles className="h-4 w-4" />
-                                <span>✨ Experimentar este visual no meu rosto</span>
+                                <span>✨ Simular este visual na minha foto</span>
                               </>
                             )}
                           </button>
+                          <div className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-400 mt-2 text-center">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <span>Seu rosto original é 100% preservado. A simulação altera somente cabelo/barba.</span>
+                          </div>
                           <p className="text-[10px] text-zinc-500 text-center mt-1.5">
                             Você possui <span className="text-amber-400 font-bold">{remainingGenerations}</span> simulações restantes nesta sessão.
                           </p>

@@ -46,7 +46,7 @@ export const FACE_SHAPES_GUIDE: Record<FaceShape, { title: string; description: 
 };
 
 const BASE_NEGATIVE_PROMPT =
-  'different person, new face, altered eyes, altered nose, altered mouth, changed facial structure, changed skin tone, face replacement, deformed face, unrealistic facial features, cartoon, illustration, 3d render, blurry, distorted, low quality, deformed ears';
+  'new person, different person, different identity, new face, face replacement, face swap, altered identity, changed facial structure, different eyes, different eyebrows, different nose, different mouth, different lips, different jaw, different skin, different skin tone, beautified face, younger face, older face, different expression, portrait of another person, new human, full body, new background, different clothing, text to image, synthetic portrait, AI generated person, celebrity, model, generic male, generic face, deformed face, unrealistic facial features, cartoon, illustration, 3d render, blurry, distorted, low quality, deformed ears';
 
 export const HAIRCUTS_CATALOG: HaircutItem[] = [
   {

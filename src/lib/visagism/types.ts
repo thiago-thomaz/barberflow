@@ -138,6 +138,10 @@ export interface GeneratePreviewResult {
   generationId?: string;
   maskMode?: MaskMode;
   latencyMs?: number;
+  rawGeneratedBuffer?: Buffer;
+  finalCompositeBuffer?: Buffer;
+  outsideMaskPixelChangeRatio?: number;
+  faceSSIM?: number;
 }
 
 export interface VisagismImageProvider {

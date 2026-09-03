@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '@/lib/prisma';
-import { getVisagismPhotoBuffer, recordVisagismMetric } from '@/lib/visagism/engine';
+import {
+  getVisagismPhotoBuffer,
+  recordVisagismMetric,
+  VISAGISM_STORAGE_DIR,
+  ensureVisagismStorageDir,
+} from '@/lib/visagism/engine';
 import { replicateImageProvider } from '@/lib/visagism/providers/replicate';
 import { HAIRCUTS_CATALOG } from '@/lib/visagism/catalog';
 import { generateMaskByMode } from '@/lib/visagism/mask';
+import { preflightCheckUserPhoto, detectFaceGeometry } from '@/lib/visagism/face-detector';
 import { validateIdentityQuality } from '@/lib/visagism/gate';
 import type { MaskMode } from '@/lib/visagism/types';
 
@@ -20,13 +29,13 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   try {
     const { token } = params;
     const body = await req.json().catch(() => ({}));
-    const { targetImageUrl, haircutName, haircutId } = body;
+    const { targetImageUrl, haircutName, haircutId, clientLandmarks } = body;
 
     if (!token) {
       return NextResponse.json({ error: 'Token inválido' }, { status: 400 });
     }
 
-    // Busca sessão ativa e valida expiração
+    // 1. Busca sessão e valida status/expiração
     const session = await prisma.visagismSession.findUnique({
       where: { publicToken: token },
     });
@@ -35,7 +44,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: 'Sessão não encontrada ou expirada' }, { status: 404 });
     }
 
-    // Controle de custo / limite por sessão (default 3)
+    // 2. Limite de gerações aprovadas por sessão (padrão 3)
     const MAX_GENERATIONS = parseInt(process.env.VISAGISM_MAX_GENERATIONS_PER_SESSION || '3', 10);
     const existingGenerations = await prisma.visagismMetric.count({
       where: {
@@ -53,7 +62,24 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       });
     }
 
-    // Busca foto do cliente salva no storage privado
+    // 3. Limite de segurança de tentativas técnicas (anti-abuso / máx 8 tentativas)
+    const totalAttempts = await prisma.visagismMetric.count({
+      where: {
+        sessionId: session.id,
+        eventName: 'generation_attempt',
+      },
+    });
+
+    if (totalAttempts >= 8) {
+      return NextResponse.json({
+        success: false,
+        message: 'Limite de tentativas técnicas atingido para esta sessão. Entre em contato com a barbearia.',
+        previewUrl: null,
+        remainingGenerations: 0,
+      });
+    }
+
+    // 4. Recupera o buffer da foto original do cliente
     let clientBuffer: Buffer | null = null;
     let clientMime = 'image/jpeg';
 
@@ -74,25 +100,34 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     if (!clientBuffer) {
       return NextResponse.json({
         success: false,
-        message: 'Foto original do cliente não encontrada para inpainting facial.',
+        message: 'Foto original do cliente não encontrada. Por favor, envie sua foto primeiro.',
         previewUrl: null,
       });
     }
 
-    // Localiza os prompts e máscara no catálogo
+    // 5. PRE-FLIGHT QUALITY CHECK (Executado ANTES de chamar a IA para não gastar créditos)
+    const preflight = await preflightCheckUserPhoto(clientBuffer);
+    if (!preflight.valid) {
+      return NextResponse.json({
+        success: false,
+        message: preflight.reason || 'Foto não atende aos requisitos de qualidade facial.',
+        previewUrl: null,
+        remainingGenerations: Math.max(0, MAX_GENERATIONS - existingGenerations),
+      });
+    }
+
+    // 6. DETECÇÃO DE GEOMETRIA FACIAL DINÂMICA
+    const geometry =
+      preflight.geometry ||
+      (await detectFaceGeometry(clientBuffer, preflight.width, preflight.height, clientLandmarks));
+
+    // 7. Catálogo e Prompts de Edição Restrita
     const catalogItem = HAIRCUTS_CATALOG.find(
       (h) =>
         (haircutId && h.id === haircutId) ||
         (haircutName && h.name.toLowerCase() === haircutName.toLowerCase())
     );
 
-    const stylePrompt =
-      catalogItem?.stylePrompt ||
-      `Edit the existing person's hairstyle only. Apply a realistic men's ${haircutName || 'fade'} haircut. Preserve exact original face, eyes, nose, mouth and facial structure. Photorealistic barber finish.`;
-
-    const negativePrompt = catalogItem?.negativePrompt;
-    
-    // Determina o modo de máscara com proteção facial
     const maskMode: MaskMode =
       catalogItem?.maskType === 'hair_beard'
         ? 'HAIR_AND_BEARD'
@@ -100,17 +135,31 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         ? 'BEARD_ONLY'
         : 'HAIR_ONLY';
 
-    const maskBuffer = generateMaskByMode(maskMode, 768, 1024);
+    const cleanCutName = haircutName || catalogItem?.name || 'modern fade';
 
-    // Registra métrica de início / tentativa
+    const stylePrompt =
+      catalogItem?.stylePrompt ||
+      `Edit only the masked hair region of the photograph. Apply a realistic men's ${cleanCutName} haircut. Preserve exact original face, eyes, nose, mouth and facial skin. Natural barber finish.`;
+
+    const negativePrompt = catalogItem?.negativePrompt;
+
+    // 8. GERA MÁSCARA DINÂMICA ADAPTADA À FACE REAL
+    const maskBuffer = generateMaskByMode(
+      maskMode,
+      preflight.width,
+      preflight.height,
+      geometry
+    );
+
+    // Registra tentativa
     await recordVisagismMetric({
       barbershopId: session.barbershopId,
       sessionId: session.id,
       eventName: 'generation_attempt',
-      metadata: { haircutName: haircutName || catalogItem?.name, maskMode },
+      metadata: { haircutName: cleanCutName, maskMode },
     });
 
-    // Executa Inpainting com preservação de identidade facial
+    // 9. EXECUTA INPAINTING CONTROLADO + COMPOSIÇÃO AUTOMÁTICA
     const genResult = await replicateImageProvider.generatePreview({
       originalImageBuffer: clientBuffer,
       originalImageMimeType: clientMime,
@@ -118,30 +167,34 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       maskMode,
       stylePrompt,
       negativePrompt,
+      denoisingStrength: 0.65,
     });
 
     const latencyMs = Date.now() - startTime;
 
-    if (!genResult || !genResult.imageUrl) {
+    if (!genResult || !genResult.finalCompositeBuffer) {
       await recordVisagismMetric({
         barbershopId: session.barbershopId,
         sessionId: session.id,
         eventName: 'generation_failed',
-        metadata: { haircutName, latencyMs, reason: 'Provider output null' },
+        metadata: { haircutName: cleanCutName, latencyMs, reason: 'Provider output null' },
       });
 
       return NextResponse.json({
         success: false,
-        message: 'Não conseguimos gerar a simulação nesta tentativa. Você pode tentar novamente sem descontar suas simulações.',
+        message: 'Não conseguimos gerar a simulação nesta tentativa. Tente novamente sem descontar suas simulações.',
         previewUrl: null,
       });
     }
 
-    // Identity Quality Gate: Valida a integridade da imagem gerada
+    // 10. TRI-GATE DE PRESERVAÇÃO DE IDENTIDADE E PIXELS
     const gateResult = await validateIdentityQuality({
       imageUrl: genResult.imageUrl,
+      imageBuffer: genResult.finalCompositeBuffer,
       originalImageBuffer: clientBuffer,
-      haircutName,
+      outsideMaskPixelChangeRatio: genResult.outsideMaskPixelChangeRatio,
+      faceSSIM: genResult.faceSSIM,
+      haircutName: cleanCutName,
       latencyMs,
     });
 
@@ -151,43 +204,62 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
         sessionId: session.id,
         eventName: 'generation_rejected',
         metadata: {
-          haircutName,
+          haircutName: cleanCutName,
           latencyMs,
           rejection_reason: gateResult.reason,
-          score: gateResult.score,
+          outside_diff: genResult.outsideMaskPixelChangeRatio,
+          face_ssim: genResult.faceSSIM,
         },
       });
 
       return NextResponse.json({
         success: false,
-        message: 'Não conseguimos preservar sua aparência com qualidade suficiente nesta tentativa. Vamos tentar novamente.',
+        message: 'Não conseguimos preservar sua identidade com qualidade suficiente nesta tentativa. Sua foto original foi mantida e nenhuma imagem incorreta foi exibida.',
         previewUrl: null,
+        remainingGenerations: Math.max(0, MAX_GENERATIONS - existingGenerations),
       });
     }
 
-    // Registra métrica de sucesso (consome simulação válida)
+    // 11. Salva a imagem composta final no storage de simulações
+    ensureVisagismStorageDir();
+    const previewsDir = path.join(VISAGISM_STORAGE_DIR, 'previews');
+    if (!fs.existsSync(previewsDir)) {
+      fs.mkdirSync(previewsDir, { recursive: true });
+    }
+
+    const previewFileName = `preview_${session.id}_${crypto.randomBytes(8).toString('hex')}.jpg`;
+    const previewFilePath = path.join(previewsDir, previewFileName);
+    fs.writeFileSync(previewFilePath, genResult.finalCompositeBuffer);
+
+    // 12. Registra métrica de sucesso (esta sim desconta crédito)
     await recordVisagismMetric({
       barbershopId: session.barbershopId,
       sessionId: session.id,
       eventName: 'preview_generated',
       metadata: {
-        haircutName: haircutName || catalogItem?.name,
+        haircutName: cleanCutName,
         targetImageUrl,
         provider: genResult.provider,
         maskMode,
         latencyMs,
         qualityScore: gateResult.score,
+        outside_diff: genResult.outsideMaskPixelChangeRatio,
+        face_ssim: genResult.faceSSIM,
+        previewFileName,
       },
     });
 
     const remaining = Math.max(0, MAX_GENERATIONS - (existingGenerations + 1));
+    const finalPreviewUrl = `/api/visagismo/session/${token}/preview/${previewFileName}`;
 
     return NextResponse.json({
       success: true,
-      previewUrl: genResult.imageUrl,
-      haircutName: haircutName || catalogItem?.name,
+      previewUrl: finalPreviewUrl,
+      haircutName: cleanCutName,
       remainingGenerations: remaining,
       maskMode,
+      qualityScore: gateResult.score,
+      faceSSIM: genResult.faceSSIM,
     });
   } catch (error: any) {
     console.error('[GENERATE_PREVIEW] Erro interno:', error);

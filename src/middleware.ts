@@ -61,6 +61,11 @@ export function middleware(req: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
+    if (payload.role !== 'SUPER_ADMIN') {
+      const dashboardUrl = new URL('/dashboard', req.url);
+      return NextResponse.redirect(dashboardUrl);
+    }
+
     return NextResponse.next();
   }
 

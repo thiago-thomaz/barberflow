@@ -23,9 +23,13 @@ function isSuperAdminTest(session) {
   return session?.role === 'SUPER_ADMIN';
 }
 
-function getPostLoginRedirectTest(user) {
-  if (!user) return '/dashboard';
-  if (user.role === 'SUPER_ADMIN') return '/admin';
+function getPostLoginRedirectTest(user, callbackUrl) {
+  if (callbackUrl && callbackUrl.startsWith('/admin') && user?.role === 'SUPER_ADMIN') {
+    return callbackUrl;
+  }
+  if (callbackUrl && !callbackUrl.startsWith('/admin')) {
+    return callbackUrl;
+  }
   return '/dashboard';
 }
 
@@ -125,8 +129,13 @@ test('=== PHASE 21: SUPER ADMIN AUTH & ROUTING SUITE ===', async (t) => {
   await t.test('2. Validate getPostLoginRedirect for all user roles', () => {
     assert.strictEqual(
       getPostLoginRedirectTest({ role: 'SUPER_ADMIN' }),
+      '/dashboard',
+      'SUPER_ADMIN defaults to /dashboard on standard login'
+    );
+    assert.strictEqual(
+      getPostLoginRedirectTest({ role: 'SUPER_ADMIN' }, '/admin'),
       '/admin',
-      'SUPER_ADMIN must redirect to /admin'
+      'SUPER_ADMIN redirects to /admin when callbackUrl is /admin'
     );
     assert.strictEqual(
       getPostLoginRedirectTest({ role: 'OWNER' }),
@@ -336,6 +345,7 @@ test('=== PHASE 21: SUPER ADMIN AUTH & ROUTING SUITE ===', async (t) => {
     });
     const verified = verifyTokenTest(token);
     assert.strictEqual(verified.barbershopId, null);
-    assert.strictEqual(getPostLoginRedirectTest(verified), '/admin');
+    assert.strictEqual(getPostLoginRedirectTest(verified), '/dashboard');
+    assert.strictEqual(getPostLoginRedirectTest(verified, '/admin'), '/admin');
   });
 });

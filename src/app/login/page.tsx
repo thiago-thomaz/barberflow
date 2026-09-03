@@ -1,13 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Scissors, Lock, Mail, ArrowRight, Sparkles } from 'lucide-react';
 import { getPostLoginRedirect } from '@/lib/auth-client';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get('callbackUrl');
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,7 +24,7 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.authenticated && data.user) {
-            const redirectUrl = getPostLoginRedirect(data.user);
+            const redirectUrl = getPostLoginRedirect(data.user, callbackUrl);
             router.push(redirectUrl);
             return;
           }
@@ -33,7 +36,7 @@ export default function LoginPage() {
       }
     }
     checkExistingAuth();
-  }, [router]);
+  }, [router, callbackUrl]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +55,7 @@ export default function LoginPage() {
         throw new Error(data.error || 'Falha ao autenticar');
       }
 
-      const redirectUrl = getPostLoginRedirect(data.user);
+      const redirectUrl = getPostLoginRedirect(data.user, callbackUrl);
       router.push(redirectUrl);
       router.refresh();
     } catch (err: any) {
@@ -75,7 +78,7 @@ export default function LoginPage() {
         throw new Error(data.error || 'Ambiente demo indisponível');
       }
 
-      const redirectUrl = getPostLoginRedirect(data.user);
+      const redirectUrl = getPostLoginRedirect(data.user, callbackUrl);
       router.push(redirectUrl);
       router.refresh();
     } catch (err: any) {
@@ -189,5 +192,17 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-[#0D0F12]">
+        <div className="w-8 h-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

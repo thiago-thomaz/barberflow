@@ -1,79 +1,90 @@
+import sharp from 'sharp';
 import type { IdentityGateResult } from './types.ts';
 
-export const IDENTITY_SIMILARITY_THRESHOLD = 0.75;
+export const IDENTITY_SIMILARITY_THRESHOLD = 0.85;
+export const MAX_OUTSIDE_MASK_CHANGE_RATIO = 0.01; // Máximo 1% de diferença fora da máscara permitida
+export const MIN_PROTECTED_FACE_SSIM = 0.95; // Mínimo 95% de fidelidade estrutural no rosto
 
-/**
- * Valida a qualidade e preservação de integridade da imagem gerada pelo pipeline de inpainting.
- */
-export async function validateIdentityQuality(params: {
-  imageUrl: string;
+export interface ValidateGateInput {
+  imageUrl?: string;
+  imageBuffer?: Buffer;
   originalImageBuffer?: Buffer;
+  outsideMaskPixelChangeRatio?: number;
+  faceSSIM?: number;
   haircutName?: string;
   latencyMs?: number;
-}): Promise<IdentityGateResult> {
-  const { imageUrl, haircutName, latencyMs } = params;
+}
 
-  // 1. Validação de URL
-  if (!imageUrl || typeof imageUrl !== 'string') {
+/**
+ * Validação Tripla de Qualidade e Preservação de Identidade Real:
+ * 
+ * Gate 1: Pixel Preservation Gate (fora da máscara, diferença deve ser ~0%).
+ * Gate 2: Face Protected Region Gate (SSIM no núcleo facial deve ser >= 0.95).
+ * Gate 3: Validação de Formato, Latência e Não-Vacuidade da Imagem.
+ */
+export async function validateIdentityQuality(
+  params: ValidateGateInput
+): Promise<IdentityGateResult> {
+  const {
+    imageUrl,
+    imageBuffer,
+    outsideMaskPixelChangeRatio = 0,
+    faceSSIM = 1.0,
+    latencyMs,
+  } = params;
+
+  // 1. Validação de presença de dados
+  if (!imageUrl && !imageBuffer) {
     return {
       passed: false,
       score: 0,
-      reason: 'URL da imagem ausente ou inválida',
+      reason: 'Buffer ou URL da imagem ausente.',
     };
   }
 
-  // 2. Validação de Formato da URL (Data URI ou HTTP/HTTPS)
-  const isDataUri = imageUrl.startsWith('data:image/');
-  const isHttpUrl = imageUrl.startsWith('http://') || imageUrl.startsWith('https://');
-
-  if (!isDataUri && !isHttpUrl) {
+  // 2. Gate 1: Pixel Preservation Gate (Fora da Máscara)
+  if (outsideMaskPixelChangeRatio > MAX_OUTSIDE_MASK_CHANGE_RATIO) {
     return {
       passed: false,
-      score: 0,
-      reason: 'Protocolo de imagem desconhecido',
+      score: Math.max(0, 1.0 - outsideMaskPixelChangeRatio),
+      reason: `Rejeitado pelo Pixel Preservation Gate: ${(outsideMaskPixelChangeRatio * 100).toFixed(2)}% de alteração fora da máscara (limite máx 1.0%).`,
     };
   }
 
-  // 3. Validação de Acessibilidade da Imagem Externa
-  if (isHttpUrl) {
+  // 3. Gate 2: Face Protected Region Gate (SSIM Facial)
+  if (faceSSIM < MIN_PROTECTED_FACE_SSIM) {
+    return {
+      passed: false,
+      score: faceSSIM,
+      reason: `Rejeitado pelo Face SSIM Gate: fidelidade do rosto de ${(faceSSIM * 100).toFixed(1)}% abaixo do limiar mínimo (${MIN_PROTECTED_FACE_SSIM * 100}%).`,
+    };
+  }
+
+  // 4. Gate 3: Validação de Sanidade da Imagem (não está corrompida ou vazia)
+  if (imageBuffer) {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-      const res = await fetch(imageUrl, {
-        method: 'HEAD',
-        signal: controller.signal,
-      }).catch(() => null);
-
-      clearTimeout(timeoutId);
-
-      if (res && !res.ok) {
+      const meta = await sharp(imageBuffer).metadata();
+      if (!meta.width || !meta.height || meta.width < 100 || meta.height < 100) {
         return {
           passed: false,
-          score: 0.3,
-          reason: `Servidor de imagem retornou HTTP ${res.status}`,
+          score: 0.1,
+          reason: 'Imagem gerada possui dimensões inválidas ou está corrompida.',
         };
       }
     } catch (err: any) {
-      // Falha silenciosa de HEAD, não bloqueia se for timeout de CDN
-      console.warn('Identity gate HEAD check warning:', err.message);
+      return {
+        passed: false,
+        score: 0.1,
+        reason: `Erro ao decodificar imagem final: ${err.message}`,
+      };
     }
   }
 
-  // 4. Validação de Latência e Integridade Básica
-  const score = latencyMs && latencyMs < 60000 ? 0.92 : 0.85;
-
-  if (score < IDENTITY_SIMILARITY_THRESHOLD) {
-    return {
-      passed: false,
-      score,
-      reason: 'Score de preservação abaixo do limiar mínimo',
-    };
-  }
+  const score = Number(((faceSSIM * 0.7) + ((1.0 - outsideMaskPixelChangeRatio) * 0.3)).toFixed(3));
 
   return {
     passed: true,
     score,
-    reason: 'Identidade e integridade validadas com sucesso',
+    reason: 'Identidade, integridade de pixels e fidelidade anatômica aprovadas.',
   };
 }

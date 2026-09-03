@@ -13,18 +13,19 @@ export interface AuthUser {
 }
 
 /**
- * Resolves the destination route after successful authentication based on the user's role.
- * SUPER_ADMIN -> /admin
- * OWNER / BARBER / RECEPTIONIST -> /dashboard
+ * Resolves the destination route after successful authentication.
+ * Standard login always redirects to the barbershop store dashboard (/dashboard).
+ * /admin is only accessed directly via URL (e.g. /admin) or callbackUrl.
  */
-export function getPostLoginRedirect(user: AuthUser | null | undefined): string {
-  if (!user) {
-    return '/dashboard';
+export function getPostLoginRedirect(
+  user?: AuthUser | null,
+  callbackUrl?: string | null
+): string {
+  if (callbackUrl && callbackUrl.startsWith('/admin') && user?.role === 'SUPER_ADMIN') {
+    return callbackUrl;
   }
-
-  if (user.role === 'SUPER_ADMIN') {
-    return '/admin';
+  if (callbackUrl && !callbackUrl.startsWith('/admin')) {
+    return callbackUrl;
   }
-
   return '/dashboard';
 }
