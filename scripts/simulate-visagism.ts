@@ -105,13 +105,14 @@ async function runSimulation() {
     if (!qualityGate.passed) {
       throw new Error(`Falha no Quality Gate para modo ${mode}: ${qualityGate.reason}`);
     }
-    console.log(`   ✅ Quality Gate APROVADO! Score: ${(qualityGate.score * 100).toFixed(1)}%`);
+    const scoreVal = qualityGate.score !== undefined ? qualityGate.score : 1.0;
+    console.log(`   ✅ Quality Gate APROVADO! Score: ${(scoreVal * 100).toFixed(1)}%`);
   }
 
   // 6. Teste de integridade de todos os 18 cortes do catálogo
   console.log('\n4. Verificando prompts de alta definição de todos os cortes do catálogo...');
   for (const cut of HAIRCUTS_CATALOG) {
-    if (!cut.stylePrompt.includes('Apply') && !cut.stylePrompt.includes('Edit')) {
+    if (!cut.stylePrompt || (!cut.stylePrompt.includes('Apply') && !cut.stylePrompt.includes('Edit'))) {
       throw new Error(`Corte ${cut.id} possui prompt fora do padrão de edição.`);
     }
   }
