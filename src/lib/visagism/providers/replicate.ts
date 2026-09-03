@@ -101,20 +101,27 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         })
       );
 
-      // 3. Prompt estritamente de edição e estilo capilar
-      const cleanPrompt = stylePrompt.startsWith('Edit')
-        ? stylePrompt
-        : `Men's ${stylePrompt} haircut, high detail clean trimmed edges, natural hair texture, professional barber finish, preserve natural lighting`;
+      // 3. Prompt estritamente de edição e estilo capilar de alta definição
+      let cleanPrompt = stylePrompt;
+      if (
+        !cleanPrompt.toLowerCase().includes('fade') &&
+        !cleanPrompt.toLowerCase().includes('cut') &&
+        !cleanPrompt.toLowerCase().includes('beard') &&
+        !cleanPrompt.toLowerCase().includes('hair') &&
+        !cleanPrompt.toLowerCase().includes('apply')
+      ) {
+        cleanPrompt = `Apply photorealistic men's ${stylePrompt} haircut, sharp fade gradient on temples, crisp natural hairline, highly detailed hair strands, barbershop styling, natural hair sheen, 8k resolution, cinematic studio lighting`;
+      }
 
-      // 4. Payload específico para o FLUX.1 Fill Dev
+      // 4. Payload específico e calibrado para o FLUX.1 Fill Dev
       const payloadInput = {
         image: base64Image,
         mask: base64Mask,
         prompt: cleanPrompt,
-        guidance: 30.0,
-        num_inference_steps: 25,
+        guidance: 28.0,
+        num_inference_steps: 28,
         output_format: 'jpg',
-        output_quality: 92,
+        output_quality: 95,
       };
 
       let res: Response | null = null;
@@ -140,6 +147,21 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
           await new Promise((r) => setTimeout(r, 2000 * retries));
           continue;
         }
+
+        // Fallback para endpoint oficial do modelo caso a versão específica retorne 404
+        if (res.status === 404) {
+          res = await fetch(`https://api.replicate.com/v1/models/${this.inpaintModel}/predictions`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              Prefer: 'wait',
+            },
+            body: JSON.stringify({
+              input: payloadInput,
+            }),
+          });
+        }
         break;
       }
 
@@ -153,7 +175,7 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
 
       // Polling resiliente caso ultrapasse o timeout inicial
       let attempts = 0;
-      while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 30) {
+      while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 35) {
         if (!data.urls?.get) break;
         await new Promise((r) => setTimeout(r, 2000));
         const pollRes = await fetch(data.urls.get, {
@@ -196,13 +218,13 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
             return null;
           }
 
-          // 7. Executa a COMPOSIÇÃO DETERMINÍSTICA BIT A BIT
+          // 7. Executa a COMPOSIÇÃO DETERMINÍSTICA BIT A BIT com Smoothstep S-Curve
           const compResult = await compositeInpaintingResult({
             originalBuffer: originalImageBuffer,
             generatedBuffer: rawGeneratedBuffer,
             maskBuffer: finalMaskBuffer,
             faceBox: faceLM.faceBox,
-            featherSigma: 2.0,
+            featherSigma: 3.5,
             mode: maskMode,
           });
 

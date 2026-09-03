@@ -171,10 +171,13 @@ export function generateHairMaskPNG(
 
   const centerX = lm ? (lm.faceBox.x + lm.faceBox.width / 2) : (geom ? geom.centerX : width / 2);
   const faceWidth = lm ? lm.faceBox.width : (geom ? geom.faceBox.width : width * 0.56);
+  const faceHeight = lm ? lm.faceBox.height : (geom ? geom.faceBox.height : height * 0.52);
   const hairlineY = lm ? lm.hairline.centerHairlineY : (geom ? geom.hairlineY : height * 0.28);
   const eyeLineY = lm ? Math.min(lm.leftEye.centerY, lm.rightEye.centerY) : (geom ? geom.eyeLineY : height * 0.38);
   const mouthY = lm ? lm.mouth.lowerLipY : (geom ? geom.mouthY : height * 0.70);
   const chinY = lm ? lm.jawline.chinTipY : (geom ? geom.chinY : height * 0.88);
+
+  const halfWidth = Math.max(20, faceWidth * 0.5);
 
   for (let y = 0; y < height; y++) {
     const rowOffset = y * rowBytes;
@@ -183,46 +186,61 @@ export function generateHairMaskPNG(
 
     for (let x = 0; x < width; x++) {
       const normX = x / width;
-      let isMasked = false;
+      let maskVal = 0;
 
       // Se for área protegida da face, força 0
       if (!isFaceProtectedRegion(normX, normY, geom, lm)) {
         const distFromCenter = Math.abs(x - centerX);
+        const normDist = distFromCenter / halfWidth;
 
         // 1. CABELO (HAIR_ONLY ou HAIR_AND_BEARD)
         if (mode === 'HAIR_ONLY' || mode === 'HAIR_AND_BEARD') {
-          // O cabelo fica no topo da cabeça, acima do início real da testa (hairline)
-          if (y < hairlineY && distFromCenter < faceWidth * 0.65) {
-            isMasked = true;
-          } else if (y >= hairlineY && y < eyeLineY - 10) {
+          // Arco anatômico contínuo da linha capilar:
+          // No centro (x = centerX), a linha fica em hairlineY.
+          // Conforme afasta para as têmporas (normDist -> 1.0), desce suavemente em direção às orelhas/costeletas.
+          const archOffset = (eyeLineY - hairlineY) * Math.pow(Math.min(1.2, normDist), 2) * 0.85;
+          const localHairlineY = hairlineY + archOffset;
+
+          // Limite craniano superior e lateral (permite volume natural de fade, pompadour e textura)
+          const maxHairWidth = faceWidth * 0.78;
+
+          if (y < localHairlineY && distFromCenter <= maxHairWidth) {
+            // Região de cabelo do topo e crânio
+            const boundaryDist = localHairlineY - y;
+            if (boundaryDist < 3) {
+              maskVal = Math.round(180 + (boundaryDist / 3) * 75);
+            } else {
+              maskVal = 255;
+            }
+          } else if (y >= localHairlineY && y < eyeLineY + 10) {
             // Têmporas laterais e costeletas superiores (sem invadir a testa central)
-            if (distFromCenter > faceWidth * 0.32 && distFromCenter < faceWidth * 0.65) {
-              isMasked = true;
+            if (distFromCenter > faceWidth * 0.30 && distFromCenter <= maxHairWidth) {
+              maskVal = 255;
             }
           }
         }
 
         // 2. BARBA (BEARD_ONLY ou HAIR_AND_BEARD)
         if (mode === 'BEARD_ONLY' || mode === 'HAIR_AND_BEARD') {
-          // A barba começa estritamente abaixo do lábio inferior
-          const beardStartY = mouthY + 5;
-          const beardEndY = Math.min(height - 1, chinY + (chinY - mouthY) * 0.45);
+          // A barba começa abaixo do lábio inferior
+          const beardStartY = mouthY + 4;
+          const beardEndY = Math.min(height - 1, chinY + (chinY - mouthY) * 0.50);
 
           if (y >= beardStartY && y <= beardEndY) {
-            // Queixo e mandíbula inferior
-            if (distFromCenter < faceWidth * 0.55) {
-              isMasked = true;
+            // Queixo, mandíbula inferior e pescoço superior
+            if (distFromCenter <= faceWidth * 0.62) {
+              maskVal = 255;
             }
-          } else if (y >= (lm ? lm.nose.tipY : height * 0.55) && y < beardStartY) {
+          } else if (y >= (lm ? lm.nose.tipY : height * 0.52) && y < beardStartY) {
             // Costeletas inferiores e bochechas externas (longe dos lábios e nariz)
-            if (distFromCenter > faceWidth * 0.28 && distFromCenter < faceWidth * 0.58) {
-              isMasked = true;
+            if (distFromCenter > faceWidth * 0.26 && distFromCenter <= faceWidth * 0.62) {
+              maskVal = 255;
             }
           }
         }
       }
 
-      rawData[rowOffset + 1 + x] = isMasked ? 255 : 0;
+      rawData[rowOffset + 1 + x] = maskVal;
     }
   }
 

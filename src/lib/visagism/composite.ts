@@ -55,7 +55,7 @@ export async function compositeInpaintingResult(params: {
   }
   const maskRaw = await maskSharp.raw().toBuffer();
 
-  // 4. Executa a composição matemática direta
+  // 4. Executa a composição matemática direta com curva Hermite Smoothstep
   const totalPixels = width * height;
   const compositeRaw = Buffer.alloc(totalPixels * 4);
 
@@ -64,7 +64,9 @@ export async function compositeInpaintingResult(params: {
 
   for (let i = 0; i < totalPixels; i++) {
     const maskVal = maskRaw[i]; // 0 (original) a 255 (gerado)
-    const alphaWeight = maskVal / 255.0;
+    const t = maskVal / 255.0;
+    // Curva Smoothstep S-Curve: 3t^2 - 2t^3 para transição orgânica e natural
+    const alphaWeight = t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
 
     const offset = i * 4;
     const origR = origRaw[offset];
@@ -76,7 +78,7 @@ export async function compositeInpaintingResult(params: {
     const genG = genRaw[offset + 1];
     const genB = genRaw[offset + 2];
 
-    if (maskVal === 0) {
+    if (maskVal === 0 || alphaWeight === 0) {
       // 100% Original Garantido (Zero mutação)
       compositeRaw[offset] = origR;
       compositeRaw[offset + 1] = origG;
@@ -84,14 +86,14 @@ export async function compositeInpaintingResult(params: {
       compositeRaw[offset + 3] = origA;
 
       outsideMaskCount++;
-    } else if (maskVal === 255) {
+    } else if (maskVal === 255 && alphaWeight >= 0.999) {
       // 100% Região Gerada (Cabelo novo)
       compositeRaw[offset] = genR;
       compositeRaw[offset + 1] = genG;
       compositeRaw[offset + 2] = genB;
       compositeRaw[offset + 3] = origA;
     } else {
-      // Zona de transição suave (Feathering na linha da testa/costeleta)
+      // Zona de transição suave (Feathering na linha da testa/costeleta com S-curve)
       compositeRaw[offset] = Math.round(origR * (1.0 - alphaWeight) + genR * alphaWeight);
       compositeRaw[offset + 1] = Math.round(origG * (1.0 - alphaWeight) + genG * alphaWeight);
       compositeRaw[offset + 2] = Math.round(origB * (1.0 - alphaWeight) + genB * alphaWeight);
@@ -117,7 +119,7 @@ export async function compositeInpaintingResult(params: {
   const compositeBuffer = await sharp(compositeRaw, {
     raw: { width, height, channels: 4 },
   })
-    .jpeg({ quality: 94, chromaSubsampling: '4:4:4' })
+    .jpeg({ quality: 95, chromaSubsampling: '4:4:4' })
     .toBuffer();
 
   return {

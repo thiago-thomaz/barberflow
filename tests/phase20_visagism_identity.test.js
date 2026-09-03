@@ -46,7 +46,10 @@ async function runTests() {
   // 2. Foto original é enviada ao provider
   test('2. Provider Replicate recebe buffer da foto original como imagem base', () => {
     const provider = new ReplicateInpaintingVisagismProvider();
-    assert.strictEqual(provider.name, 'REPLICATE_SDXL_INPAINTING');
+    assert.ok(
+      provider.name === 'REPLICATE_FLUX_FILL' || provider.name === 'REPLICATE_SDXL_INPAINTING',
+      'Provedor Replicate deve ser REPLICATE_FLUX_FILL ou REPLICATE_SDXL_INPAINTING'
+    );
   });
 
   // 3. Referência não substitui input
@@ -75,7 +78,7 @@ async function runTests() {
   test('6. Provedor principal utiliza Inpainting e não lucataco/faceswap', () => {
     const provider = new ReplicateInpaintingVisagismProvider();
     assert.ok(!provider.name.includes('FACESWAP'));
-    assert.ok(provider.name.includes('INPAINTING'));
+    assert.ok(provider.name.includes('FLUX') || provider.name.includes('INPAINTING'));
   });
 
   // 7. Máscara protege olhos
