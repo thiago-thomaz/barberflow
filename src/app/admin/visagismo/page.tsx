@@ -1,5 +1,5 @@
-import React from 'react';
 import { prisma } from '@/lib/prisma';
+import { IdentityDebugMode } from './IdentityDebugMode';
 import {
   Sparkles,
   ShieldCheck,
@@ -75,16 +75,19 @@ export default async function AdminVisagismoPage() {
             <h1 className="text-2xl font-bold text-neutral-100">Observabilidade de Visagismo</h1>
           </div>
           <p className="text-sm text-neutral-400 mt-1">
-            Fase 21 — Auditoria de Identidade, Preservação Pixel a Pixel e Quality Gates
+            Fase 22 — Identidade Real 100%, Marcos Anatômicos e FLUX.1 Fill Dev
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <ShieldCheck className="w-3.5 h-3.5" />
-            Composite Engine Ativo
+            FLUX Fill + Identity Gate Ativos
           </span>
         </div>
       </div>
+
+      {/* Identity Debug Mode — Laboratório Visual */}
+      <IdentityDebugMode />
 
       {/* Cards de Métricas Principais */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -30,24 +30,33 @@ function getReplicateToken(): string {
 }
 
 /**
- * Provedor Replicate com Inpainting e Preservação Real de Identidade Facial.
- * 
- * Executa inpainting controlado apenas na máscara, baixa o resultado bruto da IA
- * e realiza a COMPOSIÇÃO DIRETA sobre a foto original:
- * FINAL = ORIGINAL * (1 - MASK) + GERADO * MASK
+ * Tabela de versões verificadas e oficiais de modelos no Replicate
+ */
+const KNOWN_MODEL_VERSIONS: Record<string, string> = {
+  'black-forest-labs/flux-fill-dev': 'a053f84125613d83e65328a289e14eb6639e10725c243e8fb0c24128e5573f4c',
+  'black-forest-labs/flux-fill-pro': '41c767bcbfffe54ef8f05eb4d0100f9314790f7fc43a7b88d73ec06839deddb9',
+  'lucataco/sdxl-inpainting': 'a5b13068cc81a89a4fbeefeccc774869fcb34df4dbc92c1555e0f2771d49dde7',
+  'stability-ai/stable-diffusion-inpainting': '95b7223104132402a9ae91cc677285bc5eb997834bd2349fa486f53910fd68b3',
+};
+
+/**
+ * Provedor Replicate com FLUX.1 Fill e Preservação Real de Identidade Facial (Fase 22).
  */
 export class ReplicateInpaintingVisagismProvider implements VisagismImageProvider {
   name = 'REPLICATE_SDXL_INPAINTING';
 
-  // Permite configurar via env o modelo de inpainting (SDXL Inpainting ou FLUX Fill)
+  // Modelo padrão: FLUX.1 Fill Dev (Black Forest Labs)
   private readonly inpaintModel =
     process.env.VISAGISM_INPAINT_MODEL ||
     process.env.REPLICATE_INPAINT_MODEL ||
-    'stability-ai/sdxl-inpainting';
+    'black-forest-labs/flux-fill-dev';
 
-  private readonly modelVersion =
-    process.env.REPLICATE_INPAINT_MODEL_VERSION ||
-    '95b7223104132402a9ae84cc67741f33b24660d29daea3af70e07a371f119304';
+  private getModelVersion(): string {
+    if (process.env.REPLICATE_INPAINT_MODEL_VERSION) {
+      return process.env.REPLICATE_INPAINT_MODEL_VERSION;
+    }
+    return KNOWN_MODEL_VERSIONS[this.inpaintModel] || KNOWN_MODEL_VERSIONS['black-forest-labs/flux-fill-dev'];
+  }
 
   async generatePreview(input: GeneratePreviewInput): Promise<GeneratePreviewResult | null> {
     const startTime = Date.now();
@@ -65,7 +74,7 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         maskMode = 'HAIR_ONLY',
         stylePrompt,
         negativePrompt,
-        denoisingStrength = 0.65, // Denoise calibrado conservador
+        denoisingStrength = 0.50,
       } = input;
 
       const base64Image = `data:${originalImageMimeType || 'image/jpeg'};base64,${originalImageBuffer.toString('base64')}`;
@@ -73,13 +82,14 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
       const base64Mask = `data:image/png;base64,${finalMaskBuffer.toString('base64')}`;
 
       const promptHash = crypto.createHash('md5').update(stylePrompt).digest('hex').slice(0, 8);
+      const version = this.getModelVersion();
 
-      // Log estruturado seguro (sem vazar imagens ou tokens)
       console.log(
         JSON.stringify({
           event: 'visagism_inpaint_request',
           provider: this.name,
           model: this.inpaintModel,
+          version: version.slice(0, 10) + '...',
           input_image_bytes: originalImageBuffer.length,
           mask_bytes: finalMaskBuffer.length,
           mask_mode: maskMode,
@@ -88,30 +98,50 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         })
       );
 
-      // Prompt limpo e estritamente de edição da região mascarada
-      const cleanPrompt = stylePrompt.startsWith('Edit')
+      // Prompt calibrado especificamente para inpainting de alta fidelidade
+      const cleanPrompt = stylePrompt.startsWith('Men') || stylePrompt.startsWith('Edit')
         ? stylePrompt
-        : `Edit only the masked hair/beard region of the provided photograph. Preserve the original person's face, identity, facial features, skin, eyes, eyebrows, nose and mouth exactly. Apply ${stylePrompt} naturally to the existing person. Do not generate a new person. Do not change facial geometry. Do not change skin tone. Do not change facial expression. Do not change the background. Maintain the original photograph.`;
+        : `Men's ${stylePrompt}, natural realistic hair texture, professional clean barber cut, preserve existing face and identity`;
 
-      // Negative prompt agressivo contra criação de nova pessoa
-      const cleanNegativePrompt =
-        negativePrompt ||
-        'new person, different person, different identity, new face, face replacement, face swap, altered identity, changed facial structure, different eyes, different eyebrows, different nose, different mouth, different lips, different jaw, different skin, different skin tone, beautified face, younger face, older face, different expression, portrait of another person, new human, full body, new background, different clothing, text to image, synthetic portrait, AI generated person, celebrity, model, generic male, generic face, cartoon, 3d render, distorted, blurry, low quality';
+      // Monta payload adaptado ao modelo selecionado
+      let payloadInput: Record<string, any> = {};
 
-      const payloadInput = {
-        image: base64Image,
-        mask: base64Mask,
-        prompt: cleanPrompt,
-        negative_prompt: cleanNegativePrompt,
-        num_inference_steps: 25,
-        guidance_scale: 7.5,
-        prompt_strength: denoisingStrength,
-      };
+      if (this.inpaintModel.includes('flux-fill')) {
+        // FLUX.1 Fill Dev / Pro Schema
+        payloadInput = {
+          image: base64Image,
+          mask: base64Mask,
+          prompt: cleanPrompt,
+          guidance: 30.0,
+          num_inference_steps: 25,
+          output_format: 'jpg',
+          output_quality: 92,
+        };
+      } else if (this.inpaintModel.includes('sdxl')) {
+        // SDXL Inpainting Schema
+        payloadInput = {
+          image: base64Image,
+          mask: base64Mask,
+          prompt: cleanPrompt,
+          negative_prompt: negativePrompt || 'new person, different face, distorted, blurry, deformed',
+          guidance_scale: 7.5,
+          steps: 25,
+          strength: denoisingStrength,
+        };
+      } else {
+        // Fallback genérico
+        payloadInput = {
+          image: base64Image,
+          mask: base64Mask,
+          prompt: cleanPrompt,
+          guidance_scale: 7.5,
+          num_inference_steps: 25,
+        };
+      }
 
       let res: Response | null = null;
       let retries = 0;
 
-      // Retry com backoff exponencial se receber rate limit (HTTP 429)
       while (retries < 4) {
         res = await fetch('https://api.replicate.com/v1/predictions', {
           method: 'POST',
@@ -121,7 +151,7 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
             Prefer: 'wait',
           },
           body: JSON.stringify({
-            version: this.modelVersion,
+            version,
             input: payloadInput,
           }),
         });
@@ -142,11 +172,11 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
 
       let data = await res.json();
 
-      // Polling caso ultrapasse o timeout da requisição síncrona
+      // Polling resiliente caso o timeout de requisição síncrona expire
       let attempts = 0;
-      while (data.status !== 'succeeded' && data.status !== 'failed' && attempts < 25) {
+      while (data.status !== 'succeeded' && data.status !== 'failed' && attempts < 35) {
         if (!data.urls?.get) break;
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2500));
         const pollRes = await fetch(data.urls.get, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -159,7 +189,7 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
       if (data.status === 'succeeded' && data.output) {
         const outputUrl = typeof data.output === 'string' ? data.output : data.output[0] || null;
         if (outputUrl) {
-          // 1. Baixa a imagem gerada pela IA
+          // 1. Baixa a imagem gerada (RAW do inpainting)
           const imgFetch = await fetch(outputUrl);
           if (!imgFetch.ok) {
             console.warn('[VISAGISM_PROVIDER] Falha ao baixar imagem gerada:', imgFetch.status);
@@ -167,12 +197,12 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
           }
           const rawGeneratedBuffer = Buffer.from(await imgFetch.arrayBuffer());
 
-          // 2. Executa a COMPOSIÇÃO OBRIGATÓRIA (Original + Região Gerada com Feathering)
+          // 2. Executa a COMPOSIÇÃO BIT A BIT DETERMINÍSTICA
           const compResult = await compositeInpaintingResult({
             originalBuffer: originalImageBuffer,
             generatedBuffer: rawGeneratedBuffer,
             maskBuffer: finalMaskBuffer,
-            featherSigma: 2.5,
+            featherSigma: 2.0,
             mode: maskMode,
           });
 
@@ -180,9 +210,10 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
             JSON.stringify({
               event: 'visagism_inpaint_success',
               provider: this.name,
+              model: this.inpaintModel,
               generation_id: data.id,
               latency_ms: latencyMs,
-              outside_mask_pixel_change: compResult.outsideMaskPixelChangeRatio,
+              outside_diff: compResult.outsideMaskPixelChangeRatio,
               face_ssim: compResult.faceSSIM,
             })
           );

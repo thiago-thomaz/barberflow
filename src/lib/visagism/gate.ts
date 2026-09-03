@@ -1,14 +1,18 @@
 import sharp from 'sharp';
 import type { IdentityGateResult } from './types.ts';
+import { validateIdentityGate, MIN_IDENTITY_SIMILARITY } from './identity-gate.ts';
 
-export const IDENTITY_SIMILARITY_THRESHOLD = 0.85;
+export const IDENTITY_SIMILARITY_THRESHOLD = MIN_IDENTITY_SIMILARITY;
 export const MAX_OUTSIDE_MASK_CHANGE_RATIO = 0.01; // Máximo 1% de diferença fora da máscara permitida
 export const MIN_PROTECTED_FACE_SSIM = 0.95; // Mínimo 95% de fidelidade estrutural no rosto
+
+export { validateIdentityGate } from './identity-gate.ts';
 
 export interface ValidateGateInput {
   imageUrl?: string;
   imageBuffer?: Buffer;
   originalImageBuffer?: Buffer;
+  generatedRawBuffer?: Buffer;
   outsideMaskPixelChangeRatio?: number;
   faceSSIM?: number;
   haircutName?: string;
@@ -20,7 +24,7 @@ export interface ValidateGateInput {
  * 
  * Gate 1: Pixel Preservation Gate (fora da máscara, diferença deve ser ~0%).
  * Gate 2: Face Protected Region Gate (SSIM no núcleo facial deve ser >= 0.95).
- * Gate 3: Validação de Formato, Latência e Não-Vacuidade da Imagem.
+ * Gate 3: Biometria e Sanidade da Imagem.
  */
 export async function validateIdentityQuality(
   params: ValidateGateInput
@@ -28,10 +32,30 @@ export async function validateIdentityQuality(
   const {
     imageUrl,
     imageBuffer,
+    originalImageBuffer,
+    generatedRawBuffer,
     outsideMaskPixelChangeRatio = 0,
     faceSSIM = 1.0,
     latencyMs,
   } = params;
+
+  // Se tiver a imagem RAW da IA e a imagem original, roda o Identity Gate Biométrico completo
+  if (originalImageBuffer && generatedRawBuffer) {
+    const gateRes = await validateIdentityGate({
+      originalImageBuffer,
+      generatedRawBuffer,
+      finalCompositeBuffer: imageBuffer,
+      outsideMaskPixelChangeRatio,
+      faceSSIM,
+      latencyMs,
+    });
+
+    return {
+      passed: gateRes.passed,
+      score: gateRes.score,
+      reason: gateRes.reason || (gateRes.passed ? 'Aprovado pelo Identity Gate biométrico.' : 'Rejeitado por divergência facial.'),
+    };
+  }
 
   // 1. Validação de presença de dados
   if (!imageUrl && !imageBuffer) {

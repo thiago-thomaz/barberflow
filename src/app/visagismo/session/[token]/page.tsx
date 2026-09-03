@@ -897,69 +897,42 @@ export default function VisagismoSessionPage() {
                     />
                   ) : (
                     <div className="space-y-3">
-                      <div className={`grid gap-3 ${photoPreview ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        {/* Foto do Cliente */}
-                        {photoPreview && (
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
-                              <span>Sua Foto</span>
-                              <span className="text-amber-400 text-[9px] bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                                {faceShape}
-                              </span>
-                            </div>
-                            <div
-                              onClick={() =>
-                                setLightboxImage({
-                                  url: photoPreview,
-                                  title: 'Sua Foto Original',
-                                  subtitle: `Formato de rosto identificado: ${faceShape}`,
-                                })
-                              }
-                              className="relative aspect-square rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-inner group cursor-pointer"
-                            >
-                              <img
-                                src={photoPreview}
-                                alt="Sua foto original"
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                              <div className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white/80 group-hover:text-amber-400 transition-colors">
-                                <Maximize2 className="h-3.5 w-3.5" />
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                      {/* Foto do Cliente com foco absoluto em identidade */}
+                      <div className="relative aspect-square max-w-[340px] mx-auto rounded-3xl overflow-hidden border border-zinc-700 bg-zinc-950 shadow-2xl group cursor-pointer">
+                        <img
+                          src={photoPreview || current.referenceImageUrl}
+                          alt="Sua foto original"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
+                        
+                        {/* Badges explicativos */}
+                        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 pointer-events-none">
+                          <span className="text-[10px] font-bold text-black bg-amber-400 px-2.5 py-1 rounded-full shadow">
+                            Sua Foto Original
+                          </span>
+                          <span className="text-[10px] font-semibold text-zinc-200 bg-black/60 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded-full">
+                            Rosto: {faceShape}
+                          </span>
+                        </div>
 
-                        {/* Foto de Referência HD do Catálogo */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
-                            <span>Referência do Estilo</span>
-                            <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 text-[9px] px-1.5 py-0.5 rounded">
-                              Inspiração HD
-                            </span>
-                          </div>
-                          <div
-                            onClick={() => {
-                              if (current.referenceImageUrl) {
-                                setLightboxImage({
-                                  url: current.referenceImageUrl,
-                                  title: `${current.haircutName} — ${current.haircutStyle}`,
-                                  subtitle: 'Referência fotográfica em alta definição',
-                                });
-                              }
-                            }}
-                            className={`relative ${photoPreview ? 'aspect-square' : 'aspect-video'} rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-xl group cursor-pointer`}
-                          >
-                            <img
-                              src={current.referenceImageUrl || 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80'}
-                              alt={current.haircutName}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent pointer-events-none" />
-                            <div className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white/80 group-hover:text-amber-400 transition-colors">
-                              <Maximize2 className="h-3.5 w-3.5" />
-                            </div>
-                          </div>
+                        <div
+                          onClick={() =>
+                            setLightboxImage({
+                              url: photoPreview || current.referenceImageUrl,
+                              title: "Sua Foto Original",
+                              subtitle: `Formato de rosto identificado: ${faceShape}`,
+                            })
+                          }
+                          className="absolute top-3 right-3 p-2 rounded-full bg-black/60 backdrop-blur-md text-white/80 hover:text-amber-400 transition-colors"
+                        >
+                          <Maximize2 className="h-4 w-4" />
+                        </div>
+
+                        <div className="absolute bottom-3 inset-x-3 text-center pointer-events-none">
+                          <p className="text-[11px] font-medium text-zinc-300">
+                            Pronta para receber a aplicação de <span className="text-amber-400 font-bold">{current.haircutName}</span>
+                          </p>
                         </div>
                       </div>
 

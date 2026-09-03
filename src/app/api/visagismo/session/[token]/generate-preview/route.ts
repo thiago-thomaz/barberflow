@@ -13,7 +13,9 @@ import { replicateImageProvider } from '@/lib/visagism/providers/replicate';
 import { HAIRCUTS_CATALOG } from '@/lib/visagism/catalog';
 import { generateMaskByMode } from '@/lib/visagism/mask';
 import { preflightCheckUserPhoto, detectFaceGeometry } from '@/lib/visagism/face-detector';
+import { extractFaceLandmarks } from '@/lib/visagism/face-landmarks';
 import { validateIdentityQuality } from '@/lib/visagism/gate';
+import { validateIdentityGate } from '@/lib/visagism/identity-gate';
 import type { MaskMode } from '@/lib/visagism/types';
 
 export const dynamic = 'force-dynamic';
@@ -116,7 +118,8 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       });
     }
 
-    // 6. DETECÇÃO DE GEOMETRIA FACIAL DINÂMICA
+    // 6. EXTRAÇÃO DE MARCOS FACIAIS ANATÔMICOS REAIS (Fase 22)
+    const landmarks = await extractFaceLandmarks(clientBuffer, clientLandmarks);
     const geometry =
       preflight.geometry ||
       (await detectFaceGeometry(clientBuffer, preflight.width, preflight.height, clientLandmarks));
@@ -139,16 +142,17 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
     const stylePrompt =
       catalogItem?.stylePrompt ||
-      `Edit only the masked hair region of the photograph. Apply a realistic men's ${cleanCutName} haircut. Preserve exact original face, eyes, nose, mouth and facial skin. Natural barber finish.`;
+      `Men's ${cleanCutName} haircut, realistic barber finish, natural texture, maintain exact face`;
 
     const negativePrompt = catalogItem?.negativePrompt;
 
-    // 8. GERA MÁSCARA DINÂMICA ADAPTADA À FACE REAL
+    // 8. GERA MÁSCARA DINÂMICA ADAPTADA À FACE REAL COM MARCOS ANATÔMICOS
     const maskBuffer = generateMaskByMode(
       maskMode,
       preflight.width,
       preflight.height,
-      geometry
+      geometry,
+      landmarks
     );
 
     // Registra tentativa
@@ -167,12 +171,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       maskMode,
       stylePrompt,
       negativePrompt,
-      denoisingStrength: 0.65,
+      denoisingStrength: 0.50,
     });
 
     const latencyMs = Date.now() - startTime;
 
-    if (!genResult || !genResult.finalCompositeBuffer) {
+    if (!genResult || !genResult.finalCompositeBuffer || !genResult.rawGeneratedBuffer) {
       await recordVisagismMetric({
         barbershopId: session.barbershopId,
         sessionId: session.id,
@@ -187,11 +191,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       });
     }
 
-    // 10. TRI-GATE DE PRESERVAÇÃO DE IDENTIDADE E PIXELS
-    const gateResult = await validateIdentityQuality({
-      imageUrl: genResult.imageUrl,
-      imageBuffer: genResult.finalCompositeBuffer,
+    // 10. IDENTITY GATE BIOMÉTRICO (Original vs RAW Gerado antes da entrega)
+    const gateResult = await validateIdentityGate({
       originalImageBuffer: clientBuffer,
+      generatedRawBuffer: genResult.rawGeneratedBuffer,
+      finalCompositeBuffer: genResult.finalCompositeBuffer,
+      maskBuffer,
       outsideMaskPixelChangeRatio: genResult.outsideMaskPixelChangeRatio,
       faceSSIM: genResult.faceSSIM,
       haircutName: cleanCutName,
