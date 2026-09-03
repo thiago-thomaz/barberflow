@@ -1,29 +1,14 @@
-# FASE 22 — POLÍTICA DE PRIVACIDADE, SEGURANÇA E LGPD DO VISAGISMO
+# FASE 22 — POLÍTICA DE PRIVACIDADE E SEGURANÇA BIOMÉTRICA (LGPD & IDENTITY PRESERVATION)
 
-## 1. Princípios Fundamentais de Privacidade
+## 1. Princípios de Proteção de Dados e Biometria
 
-1. **Minimização de Dados (LGPD Art. 6º, III):**
-   * O upload da imagem é utilizado estritamente para a finalidade consentida pelo cliente: identificação do formato facial e geração da simulação de corte de cabelo/barba.
-   * Nenhuma fotografia é utilizada para treinamento de modelos públicos ou compartilhada com terceiros para fins publicitários.
+O módulo de Visagismo do BarberFlow foi construído em estrita conformidade com a Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018):
 
-2. **Isolamento Multi-Tenant Estrito:**
-   * Cada sessão de visagismo é indexada por `barbershopId` e associada a um `sessionId` com token criptográfico de 48 caracteres hexadecimais gerado via `crypto.randomBytes(24).toString('hex')`.
-   * Fotos e simulações de uma barbearia jamais são acessíveis por outra barbearia ou por usuários não autorizados.
-
-3. **Proteção de Rotas e Armazenamento Privado:**
-   * Todas as fotografias originais enviadas pelo cliente residem em storage local privado protegido no servidor (`/storage/visagismo/` ou `/app/storage/visagismo/`).
-   * As fotos originais **NÃO** ficam em diretórios estáticos públicos (`/public`).
-   * O acesso a fotos e simulações só é liberado mediante verificação de token de sessão ativo e não expirado via endpoint seguro com headers `Cache-Control: private, no-store`.
-
-4. **Ciclo de Vida e Retenção Temporária:**
-   * As fotografias de clientes possuem retenção transitória vinculada ao ciclo de atendimento.
-   * Rotinas de limpeza descartam sessões expiradas ou descartadas.
-   * Imagens geradas temporariamente em provedores terceiros (Replicate) são transitórias e não persistem na conta do usuário além do tempo de inferência.
-
-5. **Consentimento Explícito (LGPD Art. 7º, I):**
-   * Antes do upload ou captura da fotografia, o cliente visualiza o termo de consentimento claro e específico na interface web.
-   * O timestamp do aceite é gravado em `consentAt` na tabela `VisagismSession`.
-
-6. **Preservação Biométrica e Anti-Hallucination:**
-   * A tecnologia de inpainting com máscara restringe qualquer modificação à área autorizada (cabelo/barba).
-   * O Identity Gate biométrico impede a substituição do rosto original por modelos de catálogo ou pessoas sintéticas, assegurando que o cliente sempre veja a si próprio na simulação.
+1. **Consentimento Explícito (Opt-in):** Nenhuma fotografia é capturada, processada ou armazenada sem a prévia autorização do titular no Step 1 do fluxo.
+2. **Finalidade Estrita:** As imagens são utilizadas exclusivamente para gerar a simulação visual de corte/barba solicitada e recomendar serviços pertinentes da barbearia.
+3. **Isolamento de Storage:**
+   - As fotos dos clientes residem em diretório privado protegido no servidor (`/app/storage/visagismo/`).
+   - Nomes de arquivos são ofuscados com hashes criptográficos não sequenciais (`visagism_{sessionId}_{randomHex8}.jpg`).
+   - Não há listagem de diretório ou acesso público irrestrito. O acesso ocorre exclusivamente via token seguro de sessão.
+4. **Descarte e Retenção:** As imagens e simulações vinculadas a sessões temporárias podem ser purgadas periodicamente após o ciclo de atendimento ou mediante requisição do titular.
+5. **Composição Local em Servidor Próprio:** A junção matemática do rosto original com o corte gerado é processada localmente na instância do BarberFlow via biblioteca `sharp` (libvips), sem envio de dados a terceiros não autorizados.

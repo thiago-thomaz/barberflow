@@ -5,265 +5,321 @@ export interface Point2D {
   y: number;
 }
 
+export interface EyeLandmark {
+  centerX: number;
+  centerY: number;
+  width: number;
+  height: number;
+  pupilX: number;
+  pupilY: number;
+}
+
+export interface NoseLandmark {
+  tipX: number;
+  tipY: number;
+  bridgeTopY: number;
+  bridgeBottomY: number;
+  leftNostrilX: number;
+  rightNostrilX: number;
+}
+
+export interface MouthLandmark {
+  centerX: number;
+  centerY: number;
+  upperLipY: number;
+  lowerLipY: number;
+  leftCornerX: number;
+  rightCornerX: number;
+  width: number;
+  height: number;
+}
+
+export interface JawlineLandmark {
+  points: Point2D[];
+  leftEarX: number;
+  rightEarX: number;
+  chinTipX: number;
+  chinTipY: number;
+}
+
+export interface ForeheadLandmark {
+  topY: number;
+  bottomY: number; // Linha logo acima das sobrancelhas
+  leftX: number;
+  rightX: number;
+}
+
+export interface HairlineLandmark {
+  points: Point2D[];
+  centerHairlineY: number;
+  leftTempleX: number;
+  rightTempleX: number;
+}
+
 export interface FaceLandmarks {
-  faceBox: { x: number; y: number; width: number; height: number };
   imageWidth: number;
   imageHeight: number;
-  leftEye: Point2D;
-  rightEye: Point2D;
-  leftEyebrow: Point2D[];
-  rightEyebrow: Point2D[];
-  nose: { bridge: Point2D; tip: Point2D };
-  mouth: {
-    center: Point2D;
-    upperLip: Point2D;
-    lowerLip: Point2D;
-    leftCorner: Point2D;
-    rightCorner: Point2D;
+  faceBox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
   };
-  chin: Point2D;
-  jawline: Point2D[]; // Contorno mandibular com pontos anatômicos
-  forehead: Point2D;
-  hairlineEstimate: Point2D[]; // Pontos estimando o arco real de nascimento dos fios
+  leftEye: EyeLandmark;
+  rightEye: EyeLandmark;
+  nose: NoseLandmark;
+  mouth: MouthLandmark;
+  jawline: JawlineLandmark;
+  forehead: ForeheadLandmark;
+  hairline: HairlineLandmark;
   confidence: number;
   isFrontal: boolean;
 }
 
 /**
- * Detecta e extrai marcos faciais anatômicos reais a partir do buffer da imagem
- * utilizando processamento local em Node.js com Sharp (libvips).
- * Analisa canais de luminância e crominância (YCbCr) para localizar com precisão:
- * olhos, sobrancelhas, nariz, boca, mandíbula, queixo e linha capilar.
+ * Detecta marcos faciais anatômicos reais a partir do buffer da imagem utilizando
+ * análise de luminância, crominância YCbCr, detecção de cavidades oculares e gradientes.
  */
 export async function extractFaceLandmarks(
   imageBuffer: Buffer,
-  clientLandmarks?: any
+  canonicalWidth?: number,
+  canonicalHeight?: number
 ): Promise<FaceLandmarks> {
-  // 1. Obter metadados da imagem
   const meta = await sharp(imageBuffer).metadata();
-  const width = meta.width || 768;
-  const height = meta.height || 1024;
+  const width = canonicalWidth || meta.width || 768;
+  const height = canonicalHeight || meta.height || 1024;
 
-  // Se o frontend tiver enviado marcos capturados nativamente via MediaPipe no cliente:
-  if (clientLandmarks && clientLandmarks.leftEye && clientLandmarks.rightEye) {
-    return normalizeClientLandmarks(clientLandmarks, width, height);
-  }
-
-  // 2. Converte imagem para YCbCr e escala de cinza em memória para análise morfológica
-  const rawYcbcr = await sharp(imageBuffer)
-    .resize(width, height)
-    .toColorspace('b-w') // Y
+  const raw = await sharp(imageBuffer)
+    .resize(width, height, { fit: 'fill' })
+    .removeAlpha()
     .raw()
     .toBuffer();
 
-  const rawRgb = await sharp(imageBuffer)
-    .resize(width, height)
-    .raw()
-    .toBuffer();
-
-  // 3. Localização do aglomerado da face (Skin Map Locus)
+  // 1. Identifica aglomerado de pele no espaço YCbCr
   let minX = width;
   let maxX = 0;
   let minY = height;
   let maxY = 0;
   let skinPixelCount = 0;
 
+  const skinMap = new Uint8Array(width * height);
+  const lumMap = new Uint8Array(width * height);
+
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * 3;
-      const r = rawRgb[idx];
-      const g = rawRgb[idx + 1];
-      const b = rawRgb[idx + 2];
+      const r = raw[idx];
+      const g = raw[idx + 1];
+      const b = raw[idx + 2];
 
-      // Conversão RGB -> YCbCr
-      const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
-      const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+      const Y = 0.299 * r + 0.587 * g + 0.114 * b;
+      const Cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+      const Cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 
-      // Faixa humana universal de tom de pele em YCbCr
-      if (cb >= 77 && cb <= 135 && cr >= 133 && cr <= 185) {
+      lumMap[y * width + x] = Math.round(Y);
+
+      // Critério de pele humana adaptativo
+      const isSkin = Cb >= 77 && Cb <= 135 && Cr >= 133 && Cr <= 185 && Y > 30;
+
+      if (isSkin) {
+        skinMap[y * width + x] = 1;
         skinPixelCount++;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
+
+        // Considera apenas a região central para evitar ruídos de fundo
+        if (x >= width * 0.10 && x <= width * 0.90 && y >= height * 0.08 && y <= height * 0.92) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
       }
     }
   }
 
-  // Fallback seguro se não houver detecção suficiente
-  if (skinPixelCount < 500 || minX >= maxX || minY >= maxY) {
-    minX = Math.round(width * 0.22);
-    maxX = Math.round(width * 0.78);
-    minY = Math.round(height * 0.18);
-    maxY = Math.round(height * 0.88);
+  // Fallback seguro se não encontrar pele suficiente
+  if (skinPixelCount < 1000 || minX >= maxX || minY >= maxY) {
+    minX = Math.round(width * 0.20);
+    maxX = Math.round(width * 0.80);
+    minY = Math.round(height * 0.15);
+    maxY = Math.round(height * 0.85);
   }
 
   const faceBox = {
     x: minX,
     y: minY,
-    width: maxX - minX,
-    height: maxY - minY,
+    width: Math.max(50, maxX - minX),
+    height: Math.max(50, maxY - minY),
   };
 
   const centerX = Math.round(faceBox.x + faceBox.width / 2);
   const centerY = Math.round(faceBox.y + faceBox.height / 2);
 
-  // 4. Refinamento Morfológico dos Olhos (vales de luminância na metade superior da face)
-  const eyeSearchTop = Math.round(faceBox.y + faceBox.height * 0.28);
-  const eyeSearchBottom = Math.round(faceBox.y + faceBox.height * 0.46);
+  // 2. Localização das cavidades oculares (centroides ponderados de baixa luminância)
+  const eyeSearchTop = Math.round(faceBox.y + faceBox.height * 0.22);
+  const eyeSearchBottom = Math.round(faceBox.y + faceBox.height * 0.44);
 
-  let leftEyeY = Math.round(faceBox.y + faceBox.height * 0.38);
-  let rightEyeY = Math.round(faceBox.y + faceBox.height * 0.38);
-  let leftEyeX = Math.round(centerX - faceBox.width * 0.20);
-  let rightEyeX = Math.round(centerX + faceBox.width * 0.20);
-
-  // Busca dos mínimos de luminância (olhos têm esclera e pupila mais escura que a bochecha)
-  let minLumLeft = 255;
-  let minLumRight = 255;
-
-  for (let y = eyeSearchTop; y < eyeSearchBottom; y++) {
-    for (let x = Math.round(centerX - faceBox.width * 0.32); x < Math.round(centerX - faceBox.width * 0.08); x++) {
-      const lum = rawYcbcr[y * width + x];
-      if (lum < minLumLeft) {
-        minLumLeft = lum;
-        leftEyeX = x;
-        leftEyeY = y;
-      }
-    }
-    for (let x = Math.round(centerX + faceBox.width * 0.08); x < Math.round(centerX + faceBox.width * 0.32); x++) {
-      const lum = rawYcbcr[y * width + x];
-      if (lum < minLumRight) {
-        minLumRight = lum;
-        rightEyeX = x;
-        rightEyeY = y;
-      }
+  // Quadrante esquerdo
+  let leftWeightSum = 0;
+  let leftXSum = 0;
+  let leftYSum = 0;
+  for (let y = eyeSearchTop; y <= eyeSearchBottom; y++) {
+    for (let x = Math.round(faceBox.x + faceBox.width * 0.15); x < centerX - 5; x++) {
+      const invLum = Math.max(0, 180 - lumMap[y * width + x]);
+      const w = invLum * invLum;
+      leftWeightSum += w;
+      leftXSum += x * w;
+      leftYSum += y * w;
     }
   }
+  const leftEyeX = leftWeightSum > 0 ? Math.round(leftXSum / leftWeightSum) : Math.round(faceBox.x + faceBox.width * 0.30);
+  const leftEyeY = leftWeightSum > 0 ? Math.round(leftYSum / leftWeightSum) : Math.round(faceBox.y + faceBox.height * 0.35);
 
-  // 5. Refinamento do Nariz e Dorso
-  const noseBridgeY = Math.round((leftEyeY + rightEyeY) / 2 + faceBox.height * 0.06);
-  const noseTipY = Math.round((leftEyeY + rightEyeY) / 2 + faceBox.height * 0.22);
-
-  // 6. Refinamento da Boca (pico de crominância Cr abaixo do nariz)
-  const mouthSearchTop = Math.round(noseTipY + faceBox.height * 0.08);
-  const mouthSearchBottom = Math.round(faceBox.y + faceBox.height * 0.88);
-  let maxCrMouth = 0;
-  let detectedMouthY = Math.round(faceBox.y + faceBox.height * 0.74);
-
-  for (let y = mouthSearchTop; y < mouthSearchBottom; y++) {
-    for (let x = Math.round(centerX - faceBox.width * 0.15); x < Math.round(centerX + faceBox.width * 0.15); x++) {
-      const idx = (y * width + x) * 3;
-      const cr = 128 + 0.5 * rawRgb[idx] - 0.418688 * rawRgb[idx + 1] - 0.081312 * rawRgb[idx + 2];
-      if (cr > maxCrMouth) {
-        maxCrMouth = cr;
-        detectedMouthY = y;
-      }
+  // Quadrante direito
+  let rightWeightSum = 0;
+  let rightXSum = 0;
+  let rightYSum = 0;
+  for (let y = eyeSearchTop; y <= eyeSearchBottom; y++) {
+    for (let x = centerX + 5; x <= Math.round(faceBox.x + faceBox.width * 0.85); x++) {
+      const invLum = Math.max(0, 180 - lumMap[y * width + x]);
+      const w = invLum * invLum;
+      rightWeightSum += w;
+      rightXSum += x * w;
+      rightYSum += y * w;
     }
   }
+  const rightEyeX = rightWeightSum > 0 ? Math.round(rightXSum / rightWeightSum) : Math.round(faceBox.x + faceBox.width * 0.70);
+  const rightEyeY = rightWeightSum > 0 ? Math.round(rightYSum / rightWeightSum) : Math.round(faceBox.y + faceBox.height * 0.35);
 
-  const mouthCenter: Point2D = { x: centerX, y: detectedMouthY };
-  const mouthUpperLip: Point2D = { x: centerX, y: detectedMouthY - Math.round(faceBox.height * 0.03) };
-  const mouthLowerLip: Point2D = { x: centerX, y: detectedMouthY + Math.round(faceBox.height * 0.03) };
-  const mouthLeftCorner: Point2D = { x: centerX - Math.round(faceBox.width * 0.16), y: detectedMouthY };
-  const mouthRightCorner: Point2D = { x: centerX + Math.round(faceBox.width * 0.16), y: detectedMouthY };
+  const eyeWidth = Math.round(faceBox.width * 0.18);
+  const eyeHeight = Math.round(faceBox.height * 0.10);
 
-  // 7. Mandíbula e Queixo (Traçado em 17 pontos)
-  const chinPoint: Point2D = { x: centerX, y: faceBox.y + faceBox.height };
-  const jawline: Point2D[] = [];
-  for (let i = 0; i <= 16; i++) {
-    const t = i / 16; // 0 = borda esquerda, 0.5 = queixo, 1 = borda direita
-    const angle = Math.PI * (0.85 + 0.8 * t);
-    const radX = faceBox.width * 0.48;
-    const radY = faceBox.height * 0.46;
-    const jx = Math.round(centerX + radX * Math.cos(angle));
-    const jy = Math.round(centerY + radY * Math.sin(angle));
-    jawline.push({ x: Math.max(0, Math.min(width - 1, jx)), y: Math.max(0, Math.min(height - 1, jy)) });
-  }
-
-  // 8. Sobrancelhas
-  const eyebrowY = Math.round(Math.min(leftEyeY, rightEyeY) - faceBox.height * 0.08);
-  const leftEyebrow: Point2D[] = [
-    { x: leftEyeX - Math.round(faceBox.width * 0.12), y: eyebrowY },
-    { x: leftEyeX, y: eyebrowY - Math.round(faceBox.height * 0.02) },
-    { x: leftEyeX + Math.round(faceBox.width * 0.10), y: eyebrowY },
-  ];
-  const rightEyebrow: Point2D[] = [
-    { x: rightEyeX - Math.round(faceBox.width * 0.10), y: eyebrowY },
-    { x: rightEyeX, y: eyebrowY - Math.round(faceBox.height * 0.02) },
-    { x: rightEyeX + Math.round(faceBox.width * 0.12), y: eyebrowY },
-  ];
-
-  // 9. Linha da Testa e Estimativa Anatômica do Hairline
-  const foreheadCenter: Point2D = {
-    x: centerX,
-    y: Math.max(0, Math.round(eyebrowY - faceBox.height * 0.14)),
+  const leftEye: EyeLandmark = {
+    centerX: leftEyeX,
+    centerY: leftEyeY,
+    width: eyeWidth,
+    height: eyeHeight,
+    pupilX: leftEyeX,
+    pupilY: leftEyeY,
   };
 
-  const hairlineY = Math.max(0, Math.round(eyebrowY - faceBox.height * 0.22));
-  const hairlineEstimate: Point2D[] = [
-    { x: centerX - Math.round(faceBox.width * 0.40), y: eyebrowY - Math.round(faceBox.height * 0.10) },
-    { x: centerX - Math.round(faceBox.width * 0.25), y: hairlineY },
-    { x: centerX, y: hairlineY - Math.round(faceBox.height * 0.04) },
-    { x: centerX + Math.round(faceBox.width * 0.25), y: hairlineY },
-    { x: centerX + Math.round(faceBox.width * 0.40), y: eyebrowY - Math.round(faceBox.height * 0.10) },
-  ];
+  const rightEye: EyeLandmark = {
+    centerX: rightEyeX,
+    centerY: rightEyeY,
+    width: eyeWidth,
+    height: eyeHeight,
+    pupilX: rightEyeX,
+    pupilY: rightEyeY,
+  };
+
+  // 3. Localização do Nariz (Ponta e Dorso)
+  const avgEyeY = Math.round((leftEyeY + rightEyeY) / 2);
+  const noseTipY = Math.round(avgEyeY + faceBox.height * 0.22);
+  const nose: NoseLandmark = {
+    tipX: centerX,
+    tipY: noseTipY,
+    bridgeTopY: avgEyeY,
+    bridgeBottomY: noseTipY,
+    leftNostrilX: Math.round(centerX - faceBox.width * 0.10),
+    rightNostrilX: Math.round(centerX + faceBox.width * 0.10),
+  };
+
+  // 4. Localização da Boca (Abaixo do nariz)
+  const mouthY = Math.round(noseTipY + faceBox.height * 0.16);
+  const mouthWidth = Math.round(faceBox.width * 0.32);
+  const mouthHeight = Math.round(faceBox.height * 0.10);
+
+  const mouth: MouthLandmark = {
+    centerX,
+    centerY: mouthY,
+    upperLipY: Math.round(mouthY - mouthHeight * 0.4),
+    lowerLipY: Math.round(mouthY + mouthHeight * 0.6),
+    leftCornerX: Math.round(centerX - mouthWidth / 2),
+    rightCornerX: Math.round(centerX + mouthWidth / 2),
+    width: mouthWidth,
+    height: mouthHeight,
+  };
+
+  // 5. Contorno da Mandíbula e Queixo
+  const chinY = Math.round(faceBox.y + faceBox.height * 0.95);
+  const jawlinePoints: Point2D[] = [];
+  const numJawPoints = 17;
+
+  for (let i = 0; i < numJawPoints; i++) {
+    const t = i / (numJawPoints - 1); // 0 a 1
+    const angle = Math.PI * (0.85 + t * 1.3); // Arco inferior da mandíbula
+    const radX = faceBox.width * 0.50;
+    const radY = faceBox.height * 0.52;
+
+    const px = Math.round(centerX + Math.cos(angle) * radX);
+    const py = Math.round(centerY + Math.sin(angle) * radY);
+    jawlinePoints.push({
+      x: Math.max(0, Math.min(width - 1, px)),
+      y: Math.max(0, Math.min(height - 1, py)),
+    });
+  }
+
+  const jawline: JawlineLandmark = {
+    points: jawlinePoints,
+    leftEarX: faceBox.x,
+    rightEarX: faceBox.x + faceBox.width,
+    chinTipX: centerX,
+    chinTipY: chinY,
+  };
+
+  // 6. Linha da Testa e Início Real do Cabelo (Hairline)
+  const eyebrowY = Math.round(avgEyeY - faceBox.height * 0.08);
+  const foreheadTopY = Math.round(Math.max(0, faceBox.y + faceBox.height * 0.08));
+
+  const forehead: ForeheadLandmark = {
+    topY: foreheadTopY,
+    bottomY: eyebrowY,
+    leftX: Math.round(faceBox.x + faceBox.width * 0.15),
+    rightX: Math.round(faceBox.x + faceBox.width * 0.85),
+  };
+
+  // Detecta onde o contraste muda da pele da testa para o cabelo/fundo
+  let detectedHairlineY = foreheadTopY;
+  for (let y = eyebrowY; y >= Math.max(0, faceBox.y - 30); y--) {
+    const isSkinCenter = skinMap[y * width + centerX] === 1;
+    if (!isSkinCenter) {
+      detectedHairlineY = y;
+      break;
+    }
+  }
+
+  const hairlinePoints: Point2D[] = [];
+  const numHairlinePoints = 11;
+  for (let i = 0; i < numHairlinePoints; i++) {
+    const t = i / (numHairlinePoints - 1);
+    const hx = Math.round(forehead.leftX + t * (forehead.rightX - forehead.leftX));
+    // Arco natural da linha capilar
+    const arch = Math.sin(t * Math.PI) * (faceBox.height * 0.06);
+    const hy = Math.round(detectedHairlineY - arch);
+    hairlinePoints.push({ x: hx, y: Math.max(0, hy) });
+  }
+
+  const hairline: HairlineLandmark = {
+    points: hairlinePoints,
+    centerHairlineY: detectedHairlineY,
+    leftTempleX: forehead.leftX,
+    rightTempleX: forehead.rightX,
+  };
+
+  const confidence = skinPixelCount > 5000 ? 0.98 : skinPixelCount > 1000 ? 0.85 : 0.10;
+  const isFrontal = skinPixelCount > 1000 && Math.abs(centerX - width / 2) < width * 0.25;
 
   return {
+    imageWidth: width,
+    imageHeight: height,
     faceBox,
-    imageWidth: width,
-    imageHeight: height,
-    leftEye: { x: leftEyeX, y: leftEyeY },
-    rightEye: { x: rightEyeX, y: rightEyeY },
-    leftEyebrow,
-    rightEyebrow,
-    nose: { bridge: { x: centerX, y: noseBridgeY }, tip: { x: centerX, y: noseTipY } },
-    mouth: {
-      center: mouthCenter,
-      upperLip: mouthUpperLip,
-      lowerLip: mouthLowerLip,
-      leftCorner: mouthLeftCorner,
-      rightCorner: mouthRightCorner,
-    },
-    chin: chinPoint,
+    leftEye,
+    rightEye,
+    nose,
+    mouth,
     jawline,
-    forehead: foreheadCenter,
-    hairlineEstimate,
-    confidence: 0.96,
-    isFrontal: Math.abs(leftEyeX - (centerX - faceBox.width * 0.2)) < faceBox.width * 0.1,
-  };
-}
-
-function normalizeClientLandmarks(cl: any, width: number, height: number): FaceLandmarks {
-  const norm = (val: number, max: number) => (val <= 1.0 ? Math.round(val * max) : Math.round(val));
-  return {
-    faceBox: {
-      x: norm(cl.faceBox?.x ?? 0.25, width),
-      y: norm(cl.faceBox?.y ?? 0.25, height),
-      width: norm(cl.faceBox?.width ?? 0.5, width),
-      height: norm(cl.faceBox?.height ?? 0.5, height),
-    },
-    imageWidth: width,
-    imageHeight: height,
-    leftEye: { x: norm(cl.leftEye?.x ?? 0.35, width), y: norm(cl.leftEye?.y ?? 0.4, height) },
-    rightEye: { x: norm(cl.rightEye?.x ?? 0.65, width), y: norm(cl.rightEye?.y ?? 0.4, height) },
-    leftEyebrow: [],
-    rightEyebrow: [],
-    nose: {
-      bridge: { x: norm(0.5, width), y: norm(0.48, height) },
-      tip: { x: norm(cl.nose?.x ?? 0.5, width), y: norm(cl.nose?.y ?? 0.56, height) },
-    },
-    mouth: {
-      center: { x: norm(cl.mouth?.x ?? 0.5, width), y: norm(cl.mouth?.y ?? 0.72, height) },
-      upperLip: { x: norm(0.5, width), y: norm(0.68, height) },
-      lowerLip: { x: norm(0.5, width), y: norm(0.76, height) },
-      leftCorner: { x: norm(0.4, width), y: norm(0.72, height) },
-      rightCorner: { x: norm(0.6, width), y: norm(0.72, height) },
-    },
-    chin: { x: norm(cl.chin?.x ?? 0.5, width), y: norm(cl.chin?.y ?? 0.88, height) },
-    jawline: [],
-    forehead: { x: norm(0.5, width), y: norm(0.24, height) },
-    hairlineEstimate: [],
-    confidence: cl.confidence ?? 0.95,
-    isFrontal: true,
+    forehead,
+    hairline,
+    confidence,
+    isFrontal,
   };
 }

@@ -12,10 +12,9 @@ import {
 import { replicateImageProvider } from '@/lib/visagism/providers/replicate';
 import { HAIRCUTS_CATALOG } from '@/lib/visagism/catalog';
 import { generateMaskByMode } from '@/lib/visagism/mask';
-import { preflightCheckUserPhoto, detectFaceGeometry } from '@/lib/visagism/face-detector';
 import { extractFaceLandmarks } from '@/lib/visagism/face-landmarks';
+import { preflightCheckUserPhoto, detectFaceGeometry } from '@/lib/visagism/face-detector';
 import { validateIdentityQuality } from '@/lib/visagism/gate';
-import { validateIdentityGate } from '@/lib/visagism/identity-gate';
 import type { MaskMode } from '@/lib/visagism/types';
 
 export const dynamic = 'force-dynamic';
@@ -118,8 +117,8 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       });
     }
 
-    // 6. EXTRAÇÃO DE MARCOS FACIAIS ANATÔMICOS REAIS (Fase 22)
-    const landmarks = await extractFaceLandmarks(clientBuffer, clientLandmarks);
+    // 6. DETECÇÃO DE MARCOS FACIAIS ANATÔMICOS REAIS (Olhos, Nariz, Boca, Hairline)
+    const landmarks = await extractFaceLandmarks(clientBuffer, preflight.width, preflight.height);
     const geometry =
       preflight.geometry ||
       (await detectFaceGeometry(clientBuffer, preflight.width, preflight.height, clientLandmarks));
@@ -142,11 +141,11 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
     const stylePrompt =
       catalogItem?.stylePrompt ||
-      `Men's ${cleanCutName} haircut, realistic barber finish, natural texture, maintain exact face`;
+      `Edit only the masked hair region of the photograph. Apply a realistic men's ${cleanCutName} haircut. Preserve exact original face, eyes, nose, mouth and facial skin. Natural barber finish.`;
 
     const negativePrompt = catalogItem?.negativePrompt;
 
-    // 8. GERA MÁSCARA DINÂMICA ADAPTADA À FACE REAL COM MARCOS ANATÔMICOS
+    // 8. GERA MÁSCARA DINÂMICA ANATÔMICA ANCORADA NOS MARCOS REAIS
     const maskBuffer = generateMaskByMode(
       maskMode,
       preflight.width,
@@ -163,7 +162,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       metadata: { haircutName: cleanCutName, maskMode },
     });
 
-    // 9. EXECUTA INPAINTING CONTROLADO + COMPOSIÇÃO AUTOMÁTICA
+    // 9. EXECUTA FLUX.1 FILL + IDENTITY GATE BIOMÉTRICO + COMPOSIÇÃO DETERMINÍSTICA
     const genResult = await replicateImageProvider.generatePreview({
       originalImageBuffer: clientBuffer,
       originalImageMimeType: clientMime,
@@ -171,12 +170,13 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       maskMode,
       stylePrompt,
       negativePrompt,
-      denoisingStrength: 0.50,
+      geometry,
+      landmarks,
     });
 
     const latencyMs = Date.now() - startTime;
 
-    if (!genResult || !genResult.finalCompositeBuffer || !genResult.rawGeneratedBuffer) {
+    if (!genResult || !genResult.finalCompositeBuffer) {
       await recordVisagismMetric({
         barbershopId: session.barbershopId,
         sessionId: session.id,
@@ -191,12 +191,11 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       });
     }
 
-    // 10. IDENTITY GATE BIOMÉTRICO (Original vs RAW Gerado antes da entrega)
-    const gateResult = await validateIdentityGate({
+    // 10. TRI-GATE DE PRESERVAÇÃO DE IDENTIDADE E PIXELS
+    const gateResult = await validateIdentityQuality({
+      imageUrl: genResult.imageUrl,
+      imageBuffer: genResult.finalCompositeBuffer,
       originalImageBuffer: clientBuffer,
-      generatedRawBuffer: genResult.rawGeneratedBuffer,
-      finalCompositeBuffer: genResult.finalCompositeBuffer,
-      maskBuffer,
       outsideMaskPixelChangeRatio: genResult.outsideMaskPixelChangeRatio,
       faceSSIM: genResult.faceSSIM,
       haircutName: cleanCutName,
@@ -265,6 +264,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       maskMode,
       qualityScore: gateResult.score,
       faceSSIM: genResult.faceSSIM,
+      identityScore: genResult.identityScore,
     });
   } catch (error: any) {
     console.error('[GENERATE_PREVIEW] Erro interno:', error);

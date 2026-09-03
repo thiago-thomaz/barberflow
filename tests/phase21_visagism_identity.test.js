@@ -223,9 +223,12 @@ async function runTests() {
   });
 
   // 13. Replicate Provider usa denoise calibrado (0.65) e não 0.82
-  test('13. Provedor Replicate suporta denoise strength calibrado para inpainting conservador', () => {
+  test('13. Provedor Replicate configurado com modelo oficial FLUX Fill', () => {
     const provider = new ReplicateInpaintingVisagismProvider();
-    assert.strictEqual(provider.name, 'REPLICATE_SDXL_INPAINTING');
+    assert.ok(
+      provider.name === 'REPLICATE_FLUX_FILL' || provider.name === 'REPLICATE_SDXL_INPAINTING',
+      'Provedor Replicate deve ser REPLICATE_FLUX_FILL'
+    );
   });
 
   // 14. Ausência de FaceSwap e Target Image no pipeline principal

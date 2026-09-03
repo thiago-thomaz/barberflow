@@ -130,6 +130,8 @@ export interface GeneratePreviewInput {
   negativePrompt?: string;
   identityStrength?: number;
   denoisingStrength?: number;
+  geometry?: any;
+  landmarks?: any;
 }
 
 export interface GeneratePreviewResult {
@@ -142,6 +144,7 @@ export interface GeneratePreviewResult {
   finalCompositeBuffer?: Buffer;
   outsideMaskPixelChangeRatio?: number;
   faceSSIM?: number;
+  identityScore?: number;
 }
 
 export interface VisagismImageProvider {

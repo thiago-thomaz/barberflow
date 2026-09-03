@@ -897,44 +897,27 @@ export default function VisagismoSessionPage() {
                     />
                   ) : (
                     <div className="space-y-3">
-                      {/* Foto do Cliente com foco absoluto em identidade */}
-                      <div className="relative aspect-square max-w-[340px] mx-auto rounded-3xl overflow-hidden border border-zinc-700 bg-zinc-950 shadow-2xl group cursor-pointer">
-                        <img
-                          src={photoPreview || current.referenceImageUrl}
-                          alt="Sua foto original"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
-                        
-                        {/* Badges explicativos */}
-                        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 pointer-events-none">
-                          <span className="text-[10px] font-bold text-black bg-amber-400 px-2.5 py-1 rounded-full shadow">
-                            Sua Foto Original
-                          </span>
-                          <span className="text-[10px] font-semibold text-zinc-200 bg-black/60 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded-full">
-                            Rosto: {faceShape}
-                          </span>
+                      {/* Foto do Cliente - Foco 100% no rosto real */}
+                      {photoPreview && (
+                        <div className="space-y-2">
+                          <div className="relative aspect-[4/5] max-h-[360px] mx-auto rounded-3xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl group">
+                            <img
+                              src={photoPreview}
+                              alt="Sua foto original"
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
+                            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-amber-500/30 flex items-center gap-1.5 text-[11px] font-bold text-amber-400">
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>Sua Foto Pronta para Simulação</span>
+                            </div>
+                            <div className="absolute bottom-3 left-3 right-3 text-left">
+                              <p className="text-white font-extrabold text-sm">{current.haircutName}</p>
+                              <p className="text-zinc-300 text-[11px]">Estilo recomendado para formato {faceShape}</p>
+                            </div>
+                          </div>
                         </div>
-
-                        <div
-                          onClick={() =>
-                            setLightboxImage({
-                              url: photoPreview || current.referenceImageUrl,
-                              title: "Sua Foto Original",
-                              subtitle: `Formato de rosto identificado: ${faceShape}`,
-                            })
-                          }
-                          className="absolute top-3 right-3 p-2 rounded-full bg-black/60 backdrop-blur-md text-white/80 hover:text-amber-400 transition-colors"
-                        >
-                          <Maximize2 className="h-4 w-4" />
-                        </div>
-
-                        <div className="absolute bottom-3 inset-x-3 text-center pointer-events-none">
-                          <p className="text-[11px] font-medium text-zinc-300">
-                            Pronta para receber a aplicação de <span className="text-amber-400 font-bold">{current.haircutName}</span>
-                          </p>
-                        </div>
-                      </div>
+                      )}
 
                       {/* Botão para Disparar Inpainting Facial */}
                       {photoPreview && !aiPreviewImg && (
