@@ -201,18 +201,18 @@ export function generateHairMaskPNG(
 
         // 1. CABELO (HAIR_ONLY ou HAIR_AND_BEARD)
         if (mode === 'HAIR_ONLY' || mode === 'HAIR_AND_BEARD') {
-          // A. Calota craniana completa, coroa, topete e topo da cabeça
+          // A. Calota craniana completa, coroa, topete e topo da cabeça (toda a largura acima da linha capilar)
           if (y < hairlineY) {
             maskVal = 255;
           }
-          // B. Têmporas, fade, degradê, costeletas e laterais acima da orelha
+          // B. Têmporas, fade, degradê, costeletas e laterais
           else if (y >= hairlineY && y <= earLevelY) {
-            if (distFromCenter > eyeDistance * 0.65) {
+            if (distFromCenter > eyeDistance * 0.55) {
               maskVal = 255;
             }
           }
           // C. Fundo lateral ao lado da cabeça
-          else if (y > earLevelY && y <= chinY && distFromCenter > faceWidth * 0.65) {
+          else if (y > earLevelY && y <= chinY && distFromCenter > faceWidth * 0.60) {
             maskVal = 255;
           }
         }
@@ -225,13 +225,13 @@ export function generateHairMaskPNG(
           }
           // B. Queixo, cavanhaque, mandíbula inferior e pescoço
           else if (y > lowerLipY && y <= Math.min(height - 1, chinY + eyeDistance * 0.60)) {
-            if (distFromCenter <= faceWidth * 0.80) {
+            if (distFromCenter <= faceWidth * 0.90) {
               maskVal = 255;
             }
           }
           // C. Bochechas inferiores, costeletas em fade e laterais da mandíbula
           else if (y >= eyeLineY + eyeDistance * 0.35 && y <= chinY) {
-            if (distFromCenter > eyeDistance * 0.35 && distFromCenter <= faceWidth * 0.80) {
+            if (distFromCenter >= eyeDistance * 0.40 && distFromCenter <= faceWidth * 0.90) {
               maskVal = 255;
             }
           }

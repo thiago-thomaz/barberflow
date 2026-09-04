@@ -282,29 +282,14 @@ export default function VisagismoSessionPage() {
 
     setUploadingPhoto(true);
     try {
-      let res: Response;
-
-      // Tentativa 1: FormData com o arquivo comprimido
-      if (photoFile) {
-        const formData = new FormData();
-        formData.append('photo', photoFile);
-        formData.append('consent', 'true');
-
-        res = await fetch(`/api/visagismo/session/${token}/photo`, {
-          method: 'POST',
-          body: formData,
-        });
-      } else {
-        // Tentativa 2: JSON com payload Base64
-        res = await fetch(`/api/visagismo/session/${token}/photo`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            base64: photoPreview,
-            consent: true,
-          }),
-        });
-      }
+      const res = await fetch(`/api/visagismo/session/${token}/photo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base64: photoPreview,
+          consent: true,
+        }),
+      });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro no upload da foto');
@@ -321,7 +306,6 @@ export default function VisagismoSessionPage() {
       setStep(3);
     } catch (err: any) {
       console.error('Erro no upload da foto:', err);
-      // Fallback gracioso: permite continuar preenchendo o questionário mesmo se o upload falhar temporariamente
       setIsPhotoConfirmed(true);
       setStep(3);
     } finally {
