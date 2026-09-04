@@ -157,10 +157,10 @@ export async function calculateProtectedFaceSSIM(
   // Se o modo incluir barba, o contorno externo da mandíbula/costeletas foi autorizado para edição.
   // A validação de identidade foca estritamente no núcleo anatômico inegociável:
   // olhos, sobrancelhas, glabela, nariz e boca/lábio superior (X central: 26% a 74%, Y: 22% a 68%).
-  const startX = Math.max(0, Math.round(fb.x + fb.width * (isBeardMode ? 0.26 : 0.18)));
-  const endX = Math.min(width, Math.round(fb.x + fb.width * (isBeardMode ? 0.74 : 0.82)));
-  const startY = Math.max(0, Math.round(fb.y + fb.height * 0.22));
-  const endY = Math.min(height, Math.round(fb.y + fb.height * (isBeardMode ? 0.68 : 0.85)));
+  const startX = Math.max(0, Math.round(fb.x + fb.width * (isBeardMode ? 0.28 : 0.25)));
+  const endX = Math.min(width, Math.round(fb.x + fb.width * (isBeardMode ? 0.72 : 0.75)));
+  const startY = Math.max(0, Math.round(fb.y + fb.height * (isBeardMode ? 0.25 : 0.24)));
+  const endY = Math.min(height, Math.round(fb.y + fb.height * (isBeardMode ? 0.68 : 0.78)));
 
   let sumOrig = 0;
   let sumComp = 0;

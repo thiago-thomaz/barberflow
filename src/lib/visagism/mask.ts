@@ -27,6 +27,7 @@ export function isFaceProtectedRegion(
     const x = normX * landmarks.imageWidth;
     const y = normY * landmarks.imageHeight;
     const fb = landmarks.faceBox;
+    const centerX = fb.x + fb.width / 2;
 
     // Se estiver totalmente fora da caixa da face, não é o núcleo
     if (x < fb.x || x > fb.x + fb.width || y < fb.y || y > fb.y + fb.height) {
@@ -82,17 +83,15 @@ export function isFaceProtectedRegion(
     if (
       y >= minEyeY &&
       y <= mouth.upperLipY &&
-      Math.abs(x - landmarks.faceBox.x - landmarks.faceBox.width / 2) <= fb.width * 0.22
+      Math.abs(x - centerX) <= fb.width * 0.24
     ) {
       return true;
     }
 
-    // F. Testa anatômica (Abaixo do início real do cabelo)
-    if (y >= landmarks.hairline.centerHairlineY && y < minEyeY) {
-      if (
-        x >= landmarks.forehead.leftX - fb.width * 0.05 &&
-        x <= landmarks.forehead.rightX + fb.width * 0.05
-      ) {
+    // F. Testa anatômica central (Abaixo da linha capilar e acima das sobrancelhas)
+    const eyebrowY = Math.round(minEyeY - fb.height * 0.08);
+    if (y >= landmarks.hairline.centerHairlineY && y <= minEyeY) {
+      if (Math.abs(x - centerX) <= fb.width * 0.28) {
         return true;
       }
     }
@@ -133,8 +132,12 @@ export function isFaceProtectedRegion(
       return true;
     }
 
-    // Centro facial
+    // Centro facial e testa central
     if (y >= eyeTop && y <= mouthBottom && distFromCenterX <= fb.width * 0.20) {
+      return true;
+    }
+
+    if (y >= geometry.hairlineY && y < eyeTop && distFromCenterX <= fb.width * 0.26) {
       return true;
     }
 
@@ -195,26 +198,16 @@ export function generateHairMaskPNG(
 
         // 1. CABELO (HAIR_ONLY ou HAIR_AND_BEARD)
         if (mode === 'HAIR_ONLY' || mode === 'HAIR_AND_BEARD') {
-          // Arco anatômico contínuo da linha capilar:
-          // No centro (x = centerX), a linha fica em hairlineY.
-          // Conforme afasta para as têmporas (normDist -> 1.0), desce suavemente em direção às orelhas/costeletas.
-          const archOffset = (eyeLineY - hairlineY) * Math.pow(Math.min(1.2, normDist), 2) * 0.85;
-          const localHairlineY = hairlineY + archOffset;
+          // Topo completo da cabeça, crânio, topete, fade e coroa:
+          // Cobre desde o topo da imagem até a linha frontal do cabelo e laterais até o nível da orelha
+          const earLevelY = eyeLineY + faceHeight * 0.18;
 
-          // Limite craniano superior e lateral (permite volume natural de fade, pompadour e textura)
-          const maxHairWidth = faceWidth * 0.78;
-
-          if (y < localHairlineY && distFromCenter <= maxHairWidth) {
-            // Região de cabelo do topo e crânio
-            const boundaryDist = localHairlineY - y;
-            if (boundaryDist < 3) {
-              maskVal = Math.round(180 + (boundaryDist / 3) * 75);
-            } else {
-              maskVal = 255;
-            }
-          } else if (y >= localHairlineY && y < eyeLineY + 10) {
-            // Têmporas laterais e costeletas superiores (sem invadir a testa central)
-            if (distFromCenter > faceWidth * 0.30 && distFromCenter <= maxHairWidth) {
+          if (y < hairlineY) {
+            // Região de cabelo do topo, coroa, textura e volume superior (100% da calota craniana)
+            maskVal = 255;
+          } else if (y >= hairlineY && y <= earLevelY) {
+            // Têmporas laterais, fade, degradê e costeletas superiores (fora do núcleo central da testa)
+            if (distFromCenter > faceWidth * 0.28) {
               maskVal = 255;
             }
           }
@@ -222,18 +215,18 @@ export function generateHairMaskPNG(
 
         // 2. BARBA (BEARD_ONLY ou HAIR_AND_BEARD)
         if (mode === 'BEARD_ONLY' || mode === 'HAIR_AND_BEARD') {
-          // A barba começa abaixo do lábio inferior
-          const beardStartY = mouthY + 4;
-          const beardEndY = Math.min(height - 1, chinY + (chinY - mouthY) * 0.50);
+          // A barba começa abaixo do lábio inferior e contorna o maxilar
+          const beardStartY = mouthY + 2;
+          const beardEndY = Math.min(height - 1, chinY + (chinY - mouthY) * 0.60);
 
           if (y >= beardStartY && y <= beardEndY) {
             // Queixo, mandíbula inferior e pescoço superior
-            if (distFromCenter <= faceWidth * 0.62) {
+            if (distFromCenter <= faceWidth * 0.70) {
               maskVal = 255;
             }
-          } else if (y >= (lm ? lm.nose.tipY : height * 0.52) && y < beardStartY) {
-            // Costeletas inferiores e bochechas externas (longe dos lábios e nariz)
-            if (distFromCenter > faceWidth * 0.26 && distFromCenter <= faceWidth * 0.62) {
+          } else if (y >= (lm ? lm.nose.tipY : height * 0.50) && y < beardStartY) {
+            // Costeletas inferiores, bochechas externas e bigode (fora do centro dos lábios e nariz)
+            if (distFromCenter > faceWidth * 0.24 && distFromCenter <= faceWidth * 0.70) {
               maskVal = 255;
             }
           }

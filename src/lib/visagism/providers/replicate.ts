@@ -329,7 +329,7 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
             generatedBuffer: rawGeneratedBuffer,
             maskBuffer: finalMaskBuffer,
             faceBox: faceLM.faceBox,
-            featherSigma: 3.5,
+            featherSigma: 1.8,
             mode: maskMode,
           });
           const compLatencyMs = Date.now() - compStart;
