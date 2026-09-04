@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       logger.http('POST', '/api/webhooks/whatsapp', 200, durationMs, {
         source: 'MetaCloud',
         from,
-        actionTaken: result?.action,
+        actionTaken: (result as any)?.action || (result as any)?.status || 'processed',
       });
 
       return NextResponse.json({ success: true, result });
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
     logger.http('POST', '/api/webhooks/whatsapp', 200, durationMs, {
       source: 'Direct/WAHA',
       from,
-      actionTaken: result?.action,
+      actionTaken: (result as any)?.action || (result as any)?.status || 'processed',
     });
 
     return NextResponse.json({

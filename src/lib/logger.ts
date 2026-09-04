@@ -139,7 +139,7 @@ export interface ReplicateLogDetails {
 }
 
 export interface VisagismLogDetails {
-  step: string;
+  step?: string;
   sessionId?: string;
   barbershopId?: string;
   haircutName?: string;
