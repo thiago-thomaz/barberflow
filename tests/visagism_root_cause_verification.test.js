@@ -68,5 +68,16 @@ test('Visagism Pipeline & Root Cause Elimination', async (t) => {
     assert.ok(catalogFile.includes('clean 3-day designer stubble beard'));
     assert.ok(catalogFile.includes('sharp fade beard with seamless temple taper transition'));
   });
+
+  await t.test('6. Generate Preview route must include session profile and recommendations relations', async () => {
+    const routeFile = fs.readFileSync(
+      path.join(__dirname, '../src/app/api/visagismo/session/[token]/generate-preview/route.ts'),
+      'utf8'
+    );
+    assert.ok(routeFile.includes('include: {'), 'Must include relations in Prisma query');
+    assert.ok(routeFile.includes('profile: true'), 'Must include profile relation');
+    assert.ok(routeFile.includes('recommendations: true'), 'Must include recommendations relation');
+    assert.ok(routeFile.includes("maskMode = 'HAIR_AND_BEARD'"), 'Must enforce HAIR_AND_BEARD maskMode');
+  });
 });
 

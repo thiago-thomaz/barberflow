@@ -49,9 +49,13 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: 'Token inválido' }, { status: 400 });
     }
 
-    // 1. Busca sessão e valida status/expiração
+    // 1. Busca sessão e valida status/expiração com relacionamentos
     const session = await prisma.visagismSession.findUnique({
       where: { publicToken: token },
+      include: {
+        profile: true,
+        recommendations: true,
+      },
     });
 
     if (!session || session.status === 'EXPIRED') {
@@ -63,22 +67,16 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     }
 
     // Extrai dados complementares de recomendação da sessão se não fornecidos no body
-    let sessionRec: any = null;
-    if (session.evaluationData && typeof session.evaluationData === 'object') {
-      const evalObj = session.evaluationData as any;
-      if (Array.isArray(evalObj.recommendations)) {
-        sessionRec =
-          evalObj.recommendations.find(
-            (r: any) =>
-              r.haircutName?.toLowerCase() === haircutName?.toLowerCase() ||
-              r.haircutId === haircutId
-          ) || evalObj.recommendations[0];
-      }
-    }
+    const sessionRec =
+      session.recommendations?.find(
+        (r) =>
+          (haircutName && r.haircutName?.toLowerCase() === haircutName?.toLowerCase()) ||
+          (haircutId && r.id === haircutId)
+      ) || session.recommendations?.[0] || null;
 
     const beardName = rawBeardName || sessionRec?.beardName || null;
-    const beardId = rawBeardId || sessionRec?.beardId || null;
-    const objective = rawObjective || (session.profileData as any)?.objective || 'Corte + Barba';
+    const beardId = rawBeardId || null;
+    const objective = rawObjective || session.profile?.objective || 'Corte + Barba';
 
     logger.visagism('GENERATION_REQUEST_STARTED', {
       sessionId: session.id,
@@ -214,7 +212,9 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const catalogItem = HAIRCUTS_CATALOG.find(
       (h) =>
         (haircutId && h.id === haircutId) ||
-        (haircutName && h.name.toLowerCase() === haircutName.toLowerCase())
+        (haircutName && h.name.toLowerCase() === haircutName.toLowerCase()) ||
+        (haircutName && h.name.toLowerCase().includes(haircutName.toLowerCase())) ||
+        (haircutName && haircutName.toLowerCase().includes(h.name.toLowerCase()))
     );
 
     const beardCatalogItem = BEARD_STYLES_CATALOG.find(
@@ -231,7 +231,8 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     } else if (
       objective === 'Corte + Barba' ||
       objective === 'Estilo completo' ||
-      (beardName && beardName !== 'Rosto Liso (Barbeado Clássico)')
+      objective === 'Nao sei' ||
+      beardName !== null
     ) {
       maskMode = 'HAIR_AND_BEARD';
     } else if (catalogItem?.maskType === 'hair_beard') {
@@ -243,13 +244,24 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const cleanCutName = haircutName || catalogItem?.name || 'modern fade';
 
     let stylePrompt: string;
-    if (maskMode === 'HAIR_AND_BEARD' && beardCatalogItem?.stylePrompt) {
+    if (maskMode === 'HAIR_AND_BEARD') {
       const hairDesc =
         catalogItem?.stylePrompt?.replace(/^Apply photorealistic men's /i, '').replace(/\.$/, '') ||
-        `men's ${cleanCutName} haircut with sharp taper fade`;
-      stylePrompt = `A photorealistic portrait photograph of this man with ${hairDesc}, paired with a ${beardCatalogItem.stylePrompt}, crisp razor hairline and sharp beard lineup, ultra-detailed human hair and beard texture, authentic barbershop styling, 8k uhd, soft studio lighting`;
-    } else if (maskMode === 'BEARD_ONLY' && beardCatalogItem?.stylePrompt) {
-      stylePrompt = `A photorealistic portrait photograph of this man with a ${beardCatalogItem.stylePrompt}, razor-sharp beard lineup, ultra-detailed human facial hair texture, authentic barbershop grooming, 8k uhd, soft studio lighting`;
+        `men's ${cleanCutName} haircut with sharp skin fade on temples and textured top`;
+      const beardDesc =
+        beardCatalogItem?.stylePrompt ||
+        (beardName
+          ? `crisp groomed ${beardName} along jawline and cheeks`
+          : 'sharp groomed stubble fade beard along jawline');
+
+      stylePrompt = `A photorealistic portrait photograph of this man with ${hairDesc}, paired with a ${beardDesc}, crisp razor hairline and sharp beard lineup, ultra-detailed human hair and beard texture, authentic barbershop styling, 8k uhd, soft studio lighting`;
+    } else if (maskMode === 'BEARD_ONLY') {
+      const beardDesc =
+        beardCatalogItem?.stylePrompt ||
+        (beardName
+          ? `crisp groomed ${beardName} along jawline and cheeks`
+          : 'sharp groomed stubble fade beard along jawline');
+      stylePrompt = `A photorealistic portrait photograph of this man with a ${beardDesc}, razor-sharp beard lineup, ultra-detailed human facial hair texture, authentic barbershop grooming, 8k uhd, soft studio lighting`;
     } else {
       stylePrompt =
         catalogItem?.stylePrompt ||
