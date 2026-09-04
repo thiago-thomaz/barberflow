@@ -11,10 +11,10 @@ export interface MaskGeneratorOptions {
 }
 
 /**
- * Verifica se uma coordenada (normX, normY) ou pixel (x, y) está dentro da
- * ZONA DE PROTEÇÃO FACIAL INEGOCIÁVEL (Olhos, Nariz, Boca, Centro da Face e Testa).
+ * Verifica se uma coordenada (normX, normY) está dentro da
+ * ZONA DE PROTEÇÃO FACIAL INEGOCIÁVEL (Olhos, Nariz, Boca, Bochechas e Testa Central).
  * 
- * Retorna true se a coordenada DEVE ser protegida (máscara = 0).
+ * Retorna true se o pixel DEVE ser protegido (máscara = 0).
  */
 export function isFaceProtectedRegion(
   normX: number,
@@ -29,29 +29,23 @@ export function isFaceProtectedRegion(
     const fb = landmarks.faceBox;
     const centerX = fb.x + fb.width / 2;
 
-    // Se estiver totalmente fora da caixa da face, não é o núcleo
-    if (x < fb.x || x > fb.x + fb.width || y < fb.y || y > fb.y + fb.height) {
-      return false;
-    }
-
-    // A. Olho Esquerdo (com margem de segurança)
     const le = landmarks.leftEye;
+    const re = landmarks.rightEye;
+    const eyeDistance = Math.max(30, Math.abs(re.centerX - le.centerX));
+    const minEyeY = Math.min(le.centerY, re.centerY);
+
+    // A. Olho Esquerdo e Sobrancelha Esquerda
     if (
-      x >= le.centerX - le.width * 0.8 &&
-      x <= le.centerX + le.width * 0.8 &&
-      y >= le.centerY - le.height * 0.9 &&
-      y <= le.centerY + le.height * 0.9
+      Math.abs(x - le.centerX) <= eyeDistance * 0.42 &&
+      Math.abs(y - le.centerY) <= eyeDistance * 0.35
     ) {
       return true;
     }
 
-    // B. Olho Direito (com margem de segurança)
-    const re = landmarks.rightEye;
+    // B. Olho Direito e Sobrancelha Direita
     if (
-      x >= re.centerX - re.width * 0.8 &&
-      x <= re.centerX + re.width * 0.8 &&
-      y >= re.centerY - re.height * 0.9 &&
-      y <= re.centerY + re.height * 0.9
+      Math.abs(x - re.centerX) <= eyeDistance * 0.42 &&
+      Math.abs(y - re.centerY) <= eyeDistance * 0.35
     ) {
       return true;
     }
@@ -59,39 +53,35 @@ export function isFaceProtectedRegion(
     // C. Nariz (Ponte até a ponta e narinas)
     const nose = landmarks.nose;
     if (
-      x >= nose.leftNostrilX - fb.width * 0.05 &&
-      x <= nose.rightNostrilX + fb.width * 0.05 &&
-      y >= nose.bridgeTopY - fb.height * 0.03 &&
-      y <= nose.tipY + fb.height * 0.05
+      Math.abs(x - centerX) <= eyeDistance * 0.35 &&
+      y >= minEyeY &&
+      y <= nose.tipY + eyeDistance * 0.20
     ) {
       return true;
     }
 
-    // D. Boca e Lábios (Lábio superior ao inferior com cantos)
+    // D. Boca e Lábios
     const mouth = landmarks.mouth;
     if (
-      x >= mouth.leftCornerX - fb.width * 0.05 &&
-      x <= mouth.rightCornerX + fb.width * 0.05 &&
-      y >= mouth.upperLipY - fb.height * 0.03 &&
-      y <= mouth.lowerLipY + fb.height * 0.03
+      Math.abs(x - centerX) <= eyeDistance * 0.50 &&
+      y >= mouth.upperLipY - eyeDistance * 0.12 &&
+      y <= mouth.lowerLipY + eyeDistance * 0.18
     ) {
       return true;
     }
 
-    // E. Centro da Face (Pele central entre olhos e boca)
-    const minEyeY = Math.min(le.centerY, re.centerY);
+    // E. Centro da Face e Bochechas (entre olhos e boca)
     if (
-      y >= minEyeY &&
-      y <= mouth.upperLipY &&
-      Math.abs(x - centerX) <= fb.width * 0.24
+      y >= minEyeY - eyeDistance * 0.10 &&
+      y <= mouth.lowerLipY &&
+      Math.abs(x - centerX) <= eyeDistance * 0.65
     ) {
       return true;
     }
 
     // F. Testa anatômica central (Abaixo da linha capilar e acima das sobrancelhas)
-    const eyebrowY = Math.round(minEyeY - fb.height * 0.08);
     if (y >= landmarks.hairline.centerHairlineY && y <= minEyeY) {
-      if (Math.abs(x - centerX) <= fb.width * 0.28) {
+      if (Math.abs(x - centerX) <= eyeDistance * 0.65) {
         return true;
       }
     }
@@ -103,41 +93,32 @@ export function isFaceProtectedRegion(
   if (geometry) {
     const x = normX * geometry.imageWidth;
     const y = normY * geometry.imageHeight;
-    const fb = geometry.faceBox;
-
-    if (x < fb.x || x > fb.x + fb.width || y < fb.y || y > fb.y + fb.height) {
-      return false;
-    }
-
     const distFromCenterX = Math.abs(x - geometry.centerX);
+    const eyeDist = Math.max(30, Math.abs(geometry.rightEyeX - geometry.leftEyeX));
 
     // Olhos e Sobrancelhas
-    const eyeTop = geometry.eyeLineY - fb.height * 0.16;
-    const eyeBottom = geometry.eyeLineY + fb.height * 0.10;
-    if (y >= eyeTop && y <= eyeBottom && distFromCenterX <= fb.width * 0.40) {
-      return true;
+    if (y >= geometry.eyeLineY - eyeDist * 0.35 && y <= geometry.eyeLineY + eyeDist * 0.25) {
+      if (Math.abs(x - geometry.leftEyeX) <= eyeDist * 0.40 || Math.abs(x - geometry.rightEyeX) <= eyeDist * 0.40) {
+        return true;
+      }
     }
 
     // Nariz
-    const noseTop = geometry.eyeLineY + fb.height * 0.05;
-    const noseBottom = geometry.noseTipY + fb.height * 0.08;
-    if (y >= noseTop && y <= noseBottom && distFromCenterX <= fb.width * 0.22) {
+    if (y >= geometry.eyeLineY && y <= geometry.noseTipY + eyeDist * 0.15 && distFromCenterX <= eyeDist * 0.35) {
       return true;
     }
 
     // Boca
-    const mouthTop = geometry.mouthY - fb.height * 0.12;
-    const mouthBottom = geometry.mouthY + fb.height * 0.10;
-    if (y >= mouthTop && y <= mouthBottom && distFromCenterX <= fb.width * 0.26) {
+    if (y >= geometry.mouthY - eyeDist * 0.20 && y <= geometry.mouthY + eyeDist * 0.25 && distFromCenterX <= eyeDist * 0.50) {
       return true;
     }
 
     // Centro facial e testa central
-    if (y >= eyeTop && y <= mouthBottom && distFromCenterX <= fb.width * 0.20) {
+    if (y >= geometry.eyeLineY - eyeDist * 0.30 && y <= geometry.mouthY && distFromCenterX <= eyeDist * 0.65) {
       return true;
     }
 
-    if (y >= geometry.hairlineY && y < eyeTop && distFromCenterX <= fb.width * 0.26) {
+    if (y >= geometry.hairlineY && y < geometry.eyeLineY - eyeDist * 0.25 && distFromCenterX <= eyeDist * 0.65) {
       return true;
     }
 
@@ -146,10 +127,10 @@ export function isFaceProtectedRegion(
 
   // 3. Fallback genérico normalizado
   const distFromCenterX = Math.abs(normX - 0.5);
-  if (normY >= 0.24 && normY <= 0.44 && distFromCenterX <= 0.32) return true;
+  if (normY >= 0.28 && normY <= 0.44 && distFromCenterX <= 0.30) return true;
   if (normY >= 0.38 && normY <= 0.58 && distFromCenterX <= 0.18) return true;
   if (normY >= 0.56 && normY <= 0.74 && distFromCenterX <= 0.22) return true;
-  if (normY >= 0.26 && normY <= 0.74 && distFromCenterX <= 0.16) return true;
+  if (normY >= 0.28 && normY <= 0.74 && distFromCenterX <= 0.16) return true;
 
   return false;
 }
@@ -172,15 +153,18 @@ export function generateHairMaskPNG(
   const rowBytes = width + 1;
   const rawData = Buffer.alloc(height * rowBytes, 0);
 
-  const centerX = lm ? (lm.faceBox.x + lm.faceBox.width / 2) : (geom ? geom.centerX : width / 2);
-  const faceWidth = lm ? lm.faceBox.width : (geom ? geom.faceBox.width : width * 0.56);
-  const faceHeight = lm ? lm.faceBox.height : (geom ? geom.faceBox.height : height * 0.52);
-  const hairlineY = lm ? lm.hairline.centerHairlineY : (geom ? geom.hairlineY : height * 0.28);
-  const eyeLineY = lm ? Math.min(lm.leftEye.centerY, lm.rightEye.centerY) : (geom ? geom.eyeLineY : height * 0.38);
-  const mouthY = lm ? lm.mouth.lowerLipY : (geom ? geom.mouthY : height * 0.70);
-  const chinY = lm ? lm.jawline.chinTipY : (geom ? geom.chinY : height * 0.88);
+  const leftEyeX = lm ? lm.leftEye.centerX : (geom ? geom.leftEyeX : width * 0.35);
+  const rightEyeX = lm ? lm.rightEye.centerX : (geom ? geom.rightEyeX : width * 0.65);
+  const eyeDistance = Math.max(30, Math.abs(rightEyeX - leftEyeX));
 
-  const halfWidth = Math.max(20, faceWidth * 0.5);
+  const centerX = lm ? (leftEyeX + rightEyeX) / 2 : (geom ? geom.centerX : width / 2);
+  const faceWidth = eyeDistance * 2.25;
+  const eyeLineY = lm ? (lm.leftEye.centerY + lm.rightEye.centerY) / 2 : (geom ? geom.eyeLineY : height * 0.40);
+  const hairlineY = lm ? lm.hairline.centerHairlineY : (geom ? geom.hairlineY : eyeLineY - eyeDistance * 0.85);
+  const mouthY = lm ? lm.mouth.centerY : (geom ? geom.mouthY : eyeLineY + eyeDistance * 1.15);
+  const chinY = lm ? lm.jawline.chinTipY : (geom ? geom.chinY : eyeLineY + eyeDistance * 1.65);
+
+  const earLevelY = eyeLineY + eyeDistance * 0.55;
 
   for (let y = 0; y < height; y++) {
     const rowOffset = y * rowBytes;
@@ -194,39 +178,38 @@ export function generateHairMaskPNG(
       // Se for área protegida da face, força 0
       if (!isFaceProtectedRegion(normX, normY, geom, lm)) {
         const distFromCenter = Math.abs(x - centerX);
-        const normDist = distFromCenter / halfWidth;
 
         // 1. CABELO (HAIR_ONLY ou HAIR_AND_BEARD)
         if (mode === 'HAIR_ONLY' || mode === 'HAIR_AND_BEARD') {
-          // Topo completo da cabeça, crânio, topete, fade e coroa:
-          // Cobre desde o topo da imagem até a linha frontal do cabelo e laterais até o nível da orelha
-          const earLevelY = eyeLineY + faceHeight * 0.18;
-
+          // A. Calota craniana completa, coroa, topete e topo da cabeça
           if (y < hairlineY) {
-            // Região de cabelo do topo, coroa, textura e volume superior (100% da calota craniana)
             maskVal = 255;
-          } else if (y >= hairlineY && y <= earLevelY) {
-            // Têmporas laterais, fade, degradê e costeletas superiores (fora do núcleo central da testa)
-            if (distFromCenter > faceWidth * 0.28) {
+          }
+          // B. Têmporas, fade, degradê, costeletas e laterais acima da orelha
+          else if (y >= hairlineY && y <= earLevelY) {
+            if (distFromCenter > eyeDistance * 0.65) {
               maskVal = 255;
             }
+          }
+          // C. Fundo lateral ao lado da cabeça
+          else if (y > earLevelY && y <= chinY && distFromCenter > faceWidth * 0.65) {
+            maskVal = 255;
           }
         }
 
         // 2. BARBA (BEARD_ONLY ou HAIR_AND_BEARD)
         if (mode === 'BEARD_ONLY' || mode === 'HAIR_AND_BEARD') {
-          // A barba começa abaixo do lábio inferior e contorna o maxilar
-          const beardStartY = mouthY + 2;
-          const beardEndY = Math.min(height - 1, chinY + (chinY - mouthY) * 0.60);
+          const beardStartY = mouthY + eyeDistance * 0.15;
+          const beardEndY = Math.min(height - 1, chinY + eyeDistance * 0.50);
 
           if (y >= beardStartY && y <= beardEndY) {
-            // Queixo, mandíbula inferior e pescoço superior
-            if (distFromCenter <= faceWidth * 0.70) {
+            // Queixo, mandíbula inferior e pescoço
+            if (distFromCenter <= faceWidth * 0.75) {
               maskVal = 255;
             }
-          } else if (y >= (lm ? lm.nose.tipY : height * 0.50) && y < beardStartY) {
-            // Costeletas inferiores, bochechas externas e bigode (fora do centro dos lábios e nariz)
-            if (distFromCenter > faceWidth * 0.24 && distFromCenter <= faceWidth * 0.70) {
+          } else if (y >= eyeLineY + eyeDistance * 0.40 && y < beardStartY) {
+            // Costeletas inferiores, bochechas externas e bigode
+            if (distFromCenter > eyeDistance * 0.35 && distFromCenter <= faceWidth * 0.75) {
               maskVal = 255;
             }
           }

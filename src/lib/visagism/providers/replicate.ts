@@ -151,7 +151,7 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         image: base64Image,
         mask: base64Mask,
         prompt: cleanPrompt,
-        guidance: 28.0,
+        guidance: 3.5,
         num_inference_steps: 28,
         output_format: 'jpg',
         output_quality: 95,
