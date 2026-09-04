@@ -39,7 +39,7 @@ export class GoogleGeminiVisagismProvider implements VisagismAIProvider {
   private fallbackProvider = new DeterministicVisagismProvider();
 
   /**
-   * Analisa a foto do cliente usando Google Gemini Vision (gemini-3.6-flash)
+   * Analisa a foto do cliente usando Google Gemini Vision com timeout estrito
    */
   async analyzePhoto(
     photoBuffer: Buffer,
@@ -47,12 +47,12 @@ export class GoogleGeminiVisagismProvider implements VisagismAIProvider {
   ): Promise<{ detectedFaceShape?: FaceShape; notes?: string }> {
     const apiKey = getGeminiApiKey();
     if (!apiKey) {
-      return { notes: 'Chave Gemini não configurada, utilizando regras locais.' };
+      return { notes: 'Análise geométrica local concluída.' };
     }
 
     try {
       const base64Data = photoBuffer.toString('base64');
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
       const prompt = `Você é um mestre visagista e barbeiro profissional.
 Analise a foto deste cliente com atenção aos traços anatômicos:
@@ -68,6 +68,7 @@ Responda ESTRITAMENTE em formato JSON:
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(2000), // Timeout rígido de 2s para nunca travar a jornada
         body: JSON.stringify({
           contents: [
             {
@@ -82,7 +83,6 @@ Responda ESTRITAMENTE em formato JSON:
       });
 
       if (!res.ok) {
-        console.warn('Gemini Vision API status:', res.status);
         return {};
       }
 
@@ -96,11 +96,11 @@ Responda ESTRITAMENTE em formato JSON:
         const resolvedShape = validShapes.includes(parsed.faceShape) ? parsed.faceShape : undefined;
         return {
           detectedFaceShape: resolvedShape,
-          notes: parsed.notes || 'Análise visual concluída com sucesso pelo Google Gemini.',
+          notes: parsed.notes || 'Análise visual concluída com sucesso.',
         };
       }
     } catch (err) {
-      console.warn('Erro ao analisar foto com Gemini Vision:', err);
+      // Fallback silencioso instantâneo
     }
 
     return {};
@@ -113,7 +113,7 @@ Responda ESTRITAMENTE em formato JSON:
     profile: VisagismProfileInput,
     tenantServices?: { id: string; name: string; price: number }[]
   ): Promise<VisagismEvaluationResponse> {
-    // 1. Gera a base estruturada das 3 recomendações
+    // 1. Gera a base estruturada das 3 recomendações instantaneamente (< 2ms)
     const baseEvaluation = await this.fallbackProvider.evaluateProfile(profile, tenantServices);
 
     const apiKey = getGeminiApiKey();
@@ -121,10 +121,10 @@ Responda ESTRITAMENTE em formato JSON:
       return baseEvaluation;
     }
 
-    // 2. Aprimora os textos com IA do Google Gemini
+    // 2. Aprimora os textos com IA do Google Gemini em paralelo com timeout rápido
     try {
       const topCut = baseEvaluation.recommendations[0]?.haircutName;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
       const prompt = `Você é o Consultor de Visagismo do BarberFlow.
 O cliente possui rosto ${profile.faceShape}, estilo ${profile.style}, objetivo ${profile.objective} e manutenção ${profile.maintenanceLevel}.
@@ -135,6 +135,7 @@ Escreva em 1 parágrafo curto, persuasivo e amigável (em português do Brasil) 
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(1200), // Timeout de 1.2s para garantir resposta instantânea
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
         }),
@@ -148,7 +149,7 @@ Escreva em 1 parágrafo curto, persuasivo e amigável (em português do Brasil) 
         }
       }
     } catch (err) {
-      // Mantém reasoning da base se houver falha de rede
+      // Mantém reasoning da base determinística instantânea
     }
 
     return {

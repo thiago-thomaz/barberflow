@@ -94,23 +94,10 @@ export default function VisagismoSessionPage() {
 
     setGeneratingPreview(true);
     try {
+      // Se a foto já foi confirmada e salva no servidor, não re-envia base64 pesado para evitar lentidão
       let base64Payload: string | undefined = undefined;
-      if (photoPreview.startsWith('data:')) {
+      if (photoPreview.startsWith('data:') && !isPhotoConfirmed) {
         base64Payload = photoPreview;
-      } else {
-        try {
-          const photoBlobRes = await fetch(photoPreview);
-          if (photoBlobRes.ok) {
-            const blob = await photoBlobRes.blob();
-            base64Payload = await new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result as string);
-              reader.readAsDataURL(blob);
-            });
-          }
-        } catch (e) {
-          // fallback
-        }
       }
 
       const res = await fetch(`/api/visagismo/session/${token}/generate-preview`, {
@@ -197,9 +184,9 @@ export default function VisagismoSessionPage() {
   // Função auxiliar para comprimir e normalizar a foto no celular antes do upload
   const compressAndNormalizeImage = async (
     file: File,
-    maxWidth = 1024,
-    maxHeight = 1024,
-    quality = 0.85
+    maxWidth = 960,
+    maxHeight = 960,
+    quality = 0.80
   ): Promise<{ blob: Blob; dataUrl: string }> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
