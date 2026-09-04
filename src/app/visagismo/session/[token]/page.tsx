@@ -120,6 +120,10 @@ export default function VisagismoSessionPage() {
           targetImageUrl: targetRec.referenceImageUrl,
           haircutName: targetRec.haircutName,
           haircutId: targetRec.haircutId,
+          beardName: targetRec.beardName,
+          beardId: targetRec.beardId,
+          hairColor: targetRec.hairColor,
+          objective,
           clientPhotoBase64: base64Payload,
         }),
       });

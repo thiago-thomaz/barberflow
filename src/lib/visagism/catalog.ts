@@ -366,6 +366,8 @@ export const BEARD_STYLES_CATALOG: BeardStyleItem[] = [
     maintenanceLevel: 'Pouco',
     idealWithHaircuts: ['low-fade', 'mid-fade', 'quiff', 'taper-fade', 'french-crop', 'corte-social'],
     stylingTips: 'Apare 2x por semana e mantenha a linha da garganta limpa a 2 dedos do pomo de adão.',
+    stylePrompt: 'clean 3-day designer stubble beard, precisely lined up on cheeks and neckline, neat trimmed mustache, authentic stubble hair follicles',
+    negativePrompt: BASE_NEGATIVE_PROMPT,
   },
   {
     id: 'short-boxed',
@@ -375,6 +377,8 @@ export const BEARD_STYLES_CATALOG: BeardStyleItem[] = [
     maintenanceLevel: 'Medio',
     idealWithHaircuts: ['low-fade', 'side-part', 'quiff', 'textured-crop', 'corte-executivo'],
     stylingTips: 'Óleo para barba para maciez e alinhamento com navalhete na barbearia a cada 15 dias.',
+    stylePrompt: 'crisp short boxed beard, sharp geometric contour along jawline and cheeks, well-groomed medium density beard, razor-sharp beard lineup',
+    negativePrompt: BASE_NEGATIVE_PROMPT,
   },
   {
     id: 'barba-cheia',
@@ -384,6 +388,8 @@ export const BEARD_STYLES_CATALOG: BeardStyleItem[] = [
     maintenanceLevel: 'Bastante',
     idealWithHaircuts: ['buzz-cut', 'skin-fade', 'taper-fade', 'slick-back', 'long-hair-layers'],
     stylingTips: 'Balm modelador diário, escova de cerdas naturais e hidratação profunda semanal.',
+    stylePrompt: 'full robust lumberjack beard, thick dense facial hair along jawline and chin, groomed mustache, masculine healthy beard finish',
+    negativePrompt: BASE_NEGATIVE_PROMPT,
   },
   {
     id: 'barba-desenhada',
@@ -393,6 +399,8 @@ export const BEARD_STYLES_CATALOG: BeardStyleItem[] = [
     maintenanceLevel: 'Bastante',
     idealWithHaircuts: ['mid-fade', 'high-fade', 'skin-fade', 'curly-fade'],
     stylingTips: 'Requer retoque profissional frequente para manter a precisão do degradê facial.',
+    stylePrompt: 'sharp fade beard with seamless temple taper transition, razor sharp sculpted cheek lines, gradient fade beard, modern barber finish',
+    negativePrompt: BASE_NEGATIVE_PROMPT,
   },
   {
     id: 'cavanhaque-moderno',
@@ -402,6 +410,8 @@ export const BEARD_STYLES_CATALOG: BeardStyleItem[] = [
     maintenanceLevel: 'Pouco',
     idealWithHaircuts: ['corte-social', 'low-fade', 'crew-cut', 'side-part'],
     stylingTips: 'Ideal para quem possui falhas nas laterais do rosto e quer destacar o queixo.',
+    stylePrompt: 'modern connected goatee and styled mustache, clean-shaven smooth cheeks and jawline, razor-defined goatee chin contour',
+    negativePrompt: BASE_NEGATIVE_PROMPT,
   },
   {
     id: 'bigode-chevron',
@@ -411,6 +421,8 @@ export const BEARD_STYLES_CATALOG: BeardStyleItem[] = [
     maintenanceLevel: 'Medio',
     idealWithHaircuts: ['taper-fade', 'side-part', 'buzz-cut', 'medium-flow'],
     stylingTips: 'Cera para bigode nas pontas e corte milimétrico na linha do lábio.',
+    stylePrompt: 'thick vintage chevron mustache covering upper lip, clean-shaven stubble-free cheeks and jawline, classic barber styled mustache',
+    negativePrompt: BASE_NEGATIVE_PROMPT,
   },
   {
     id: 'barba-curta-degrade',
@@ -420,6 +432,8 @@ export const BEARD_STYLES_CATALOG: BeardStyleItem[] = [
     maintenanceLevel: 'Medio',
     idealWithHaircuts: ['low-fade', 'textured-crop', 'quiff', 'corte-executivo'],
     stylingTips: 'Efeito alongador visual imediato para rostos redondos ou mais largos.',
+    stylePrompt: 'short tapered gradient beard, close-trimmed sides fading into defined chin beard volume, crisp razor edges and mustache',
+    negativePrompt: BASE_NEGATIVE_PROMPT,
   },
   {
     id: 'rosto-liso',
@@ -429,6 +443,8 @@ export const BEARD_STYLES_CATALOG: BeardStyleItem[] = [
     maintenanceLevel: 'Pouco',
     idealWithHaircuts: ['corte-social', 'side-part', 'corte-executivo', 'pompadour'],
     stylingTips: 'Toalha quente e hidratação para evitar foliculite.',
+    stylePrompt: 'completely clean-shaven smooth skin, zero beard stubble, fresh barbershop hot towel shave finish, clear healthy facial skin',
+    negativePrompt: BASE_NEGATIVE_PROMPT,
   },
 ];
 

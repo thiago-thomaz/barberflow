@@ -10,7 +10,7 @@ import {
   ensureVisagismStorageDir,
 } from '@/lib/visagism/engine';
 import { replicateImageProvider } from '@/lib/visagism/providers/replicate';
-import { HAIRCUTS_CATALOG } from '@/lib/visagism/catalog';
+import { HAIRCUTS_CATALOG, BEARD_STYLES_CATALOG } from '@/lib/visagism/catalog';
 import { generateMaskByMode } from '@/lib/visagism/mask';
 import { extractFaceLandmarks } from '@/lib/visagism/face-landmarks';
 import { preflightCheckUserPhoto, detectFaceGeometry } from '@/lib/visagism/face-detector';
@@ -31,7 +31,15 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   try {
     const { token } = params;
     const body = await req.json().catch(() => ({}));
-    const { targetImageUrl, haircutName, haircutId, clientLandmarks } = body;
+    const {
+      targetImageUrl,
+      haircutName,
+      haircutId,
+      beardName: rawBeardName,
+      beardId: rawBeardId,
+      objective: rawObjective,
+      clientLandmarks,
+    } = body;
 
     if (!token) {
       logger.warn('[GENERATE_PREVIEW] Requisição sem token de sessão', {
@@ -54,11 +62,32 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: 'Sessão não encontrada ou expirada' }, { status: 404 });
     }
 
+    // Extrai dados complementares de recomendação da sessão se não fornecidos no body
+    let sessionRec: any = null;
+    if (session.evaluationData && typeof session.evaluationData === 'object') {
+      const evalObj = session.evaluationData as any;
+      if (Array.isArray(evalObj.recommendations)) {
+        sessionRec =
+          evalObj.recommendations.find(
+            (r: any) =>
+              r.haircutName?.toLowerCase() === haircutName?.toLowerCase() ||
+              r.haircutId === haircutId
+          ) || evalObj.recommendations[0];
+      }
+    }
+
+    const beardName = rawBeardName || sessionRec?.beardName || null;
+    const beardId = rawBeardId || sessionRec?.beardId || null;
+    const objective = rawObjective || (session.profileData as any)?.objective || 'Corte + Barba';
+
     logger.visagism('GENERATION_REQUEST_STARTED', {
       sessionId: session.id,
       barbershopId: session.barbershopId,
       haircutName,
       haircutId,
+      beardName,
+      beardId,
+      objective,
     });
 
     // 2. Limite de gerações aprovadas por sessão (padrão 3)
@@ -181,29 +210,55 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       durationMs: lmDurationMs,
     });
 
-    // 7. Catálogo e Prompts de Edição Restrita
+    // 7. Catálogo e Prompts de Edição Restrita (Cabelo + Barba)
     const catalogItem = HAIRCUTS_CATALOG.find(
       (h) =>
         (haircutId && h.id === haircutId) ||
         (haircutName && h.name.toLowerCase() === haircutName.toLowerCase())
     );
 
-    const maskMode: MaskMode =
-      catalogItem?.maskType === 'hair_beard'
-        ? 'HAIR_AND_BEARD'
-        : catalogItem?.maskType === 'beard'
-        ? 'BEARD_ONLY'
-        : 'HAIR_ONLY';
+    const beardCatalogItem = BEARD_STYLES_CATALOG.find(
+      (b) =>
+        (beardId && b.id === beardId) ||
+        (beardName && b.name.toLowerCase() === beardName.toLowerCase()) ||
+        (beardName && b.name.toLowerCase().includes(beardName.toLowerCase())) ||
+        (beardName && beardName.toLowerCase().includes(b.name.toLowerCase()))
+    );
+
+    let maskMode: MaskMode = 'HAIR_ONLY';
+    if (objective === 'Barba') {
+      maskMode = 'BEARD_ONLY';
+    } else if (
+      objective === 'Corte + Barba' ||
+      objective === 'Estilo completo' ||
+      (beardName && beardName !== 'Rosto Liso (Barbeado Clássico)')
+    ) {
+      maskMode = 'HAIR_AND_BEARD';
+    } else if (catalogItem?.maskType === 'hair_beard') {
+      maskMode = 'HAIR_AND_BEARD';
+    } else if (catalogItem?.maskType === 'beard') {
+      maskMode = 'BEARD_ONLY';
+    }
 
     const cleanCutName = haircutName || catalogItem?.name || 'modern fade';
 
-    const stylePrompt =
-      catalogItem?.stylePrompt ||
-      `Edit only the masked hair region of the photograph. Apply a realistic men's ${cleanCutName} haircut. Preserve exact original face, eyes, nose, mouth and facial skin. Natural barber finish.`;
+    let stylePrompt: string;
+    if (maskMode === 'HAIR_AND_BEARD' && beardCatalogItem?.stylePrompt) {
+      const hairDesc =
+        catalogItem?.stylePrompt?.replace(/^Apply photorealistic men's /i, '').replace(/\.$/, '') ||
+        `men's ${cleanCutName} haircut with sharp taper fade`;
+      stylePrompt = `A photorealistic portrait photograph of this man with ${hairDesc}, paired with a ${beardCatalogItem.stylePrompt}, crisp razor hairline and sharp beard lineup, ultra-detailed human hair and beard texture, authentic barbershop styling, 8k uhd, soft studio lighting`;
+    } else if (maskMode === 'BEARD_ONLY' && beardCatalogItem?.stylePrompt) {
+      stylePrompt = `A photorealistic portrait photograph of this man with a ${beardCatalogItem.stylePrompt}, razor-sharp beard lineup, ultra-detailed human facial hair texture, authentic barbershop grooming, 8k uhd, soft studio lighting`;
+    } else {
+      stylePrompt =
+        catalogItem?.stylePrompt ||
+        `A photorealistic portrait photograph of this man with a ${cleanCutName} haircut, sharp fade gradient on temples, crisp natural hairline, highly detailed hair strands, barbershop styling, 8k uhd`;
+    }
 
-    const negativePrompt = catalogItem?.negativePrompt;
+    const negativePrompt = catalogItem?.negativePrompt || beardCatalogItem?.negativePrompt;
 
-    // 8. GERA MÁSCARA DINÂMICA ANATÔMICA ANCORADA NOS MARCOS REAIS
+    // 8. GERA MÁSCARA DINÂMICA ANATÔMICA ANCORADA NOS MARCOS REAIS (Cabelo + Barba)
     const maskStart = Date.now();
     const maskBuffer = generateMaskByMode(
       maskMode,

@@ -57,4 +57,16 @@ test('Visagism Pipeline & Root Cause Elimination', async (t) => {
     assert.ok(compFile.includes('alphaWeight'), 'Must use alpha weighting');
     assert.ok(compFile.includes('calculateProtectedFaceSSIM'), 'Must calculate face SSIM');
   });
+
+  await t.test('5. Beard Styles Catalog must contain style prompts for inpainting', async () => {
+    const catalogFile = fs.readFileSync(path.join(__dirname, '../src/lib/visagism/catalog.ts'), 'utf8');
+    assert.ok(catalogFile.includes("id: 'barba-por-fazer'"));
+    assert.ok(catalogFile.includes("id: 'barba-desenhada'"));
+    assert.ok(catalogFile.includes("id: 'barba-cheia'"));
+    assert.ok(catalogFile.includes("id: 'cavanhaque-moderno'"));
+    assert.ok(catalogFile.includes("id: 'bigode-chevron'"));
+    assert.ok(catalogFile.includes('clean 3-day designer stubble beard'));
+    assert.ok(catalogFile.includes('sharp fade beard with seamless temple taper transition'));
+  });
 });
+

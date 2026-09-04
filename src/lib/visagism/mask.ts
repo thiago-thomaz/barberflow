@@ -20,7 +20,8 @@ export function isFaceProtectedRegion(
   normX: number,
   normY: number,
   geometry?: FaceGeometry,
-  landmarks?: FaceLandmarks
+  landmarks?: FaceLandmarks,
+  mode: MaskMode = 'HAIR_ONLY'
 ): boolean {
   // 1. Prioridade para FaceLandmarks reais de alta precisão
   if (landmarks) {
@@ -34,7 +35,7 @@ export function isFaceProtectedRegion(
     const eyeDistance = Math.max(30, Math.abs(re.centerX - le.centerX));
     const minEyeY = Math.min(le.centerY, re.centerY);
 
-    // A. Olho Esquerdo e Sobrancelha Esquerda
+    // A. Olho Esquerdo e Sobrancelha Esquerda (100% protegido em TODOS os modos)
     if (
       Math.abs(x - le.centerX) <= eyeDistance * 0.42 &&
       Math.abs(y - le.centerY) <= eyeDistance * 0.35
@@ -42,7 +43,7 @@ export function isFaceProtectedRegion(
       return true;
     }
 
-    // B. Olho Direito e Sobrancelha Direita
+    // B. Olho Direito e Sobrancelha Direita (100% protegido em TODOS os modos)
     if (
       Math.abs(x - re.centerX) <= eyeDistance * 0.42 &&
       Math.abs(y - re.centerY) <= eyeDistance * 0.35
@@ -50,30 +51,44 @@ export function isFaceProtectedRegion(
       return true;
     }
 
-    // C. Nariz (Ponte até a ponta e narinas)
+    // C. Nariz (Ponte superior até a ponta e narinas)
     const nose = landmarks.nose;
     if (
       Math.abs(x - centerX) <= eyeDistance * 0.35 &&
       y >= minEyeY &&
-      y <= nose.tipY + eyeDistance * 0.20
+      y <= nose.tipY
     ) {
       return true;
     }
 
-    // D. Boca e Lábios
+    // D. Boca e Lábios internos (abertura da boca e lábios)
     const mouth = landmarks.mouth;
     if (
-      Math.abs(x - centerX) <= eyeDistance * 0.50 &&
-      y >= mouth.upperLipY - eyeDistance * 0.12 &&
-      y <= mouth.lowerLipY + eyeDistance * 0.18
+      Math.abs(x - centerX) <= Math.max(eyeDistance * 0.45, mouth.width * 0.55) &&
+      y >= mouth.upperLipY &&
+      y <= mouth.lowerLipY
     ) {
       return true;
     }
 
-    // E. Centro da Face e Bochechas (entre olhos e boca)
+    // Se o modo incluir barba (BEARD_ONLY ou HAIR_AND_BEARD):
+    // Liberamos a área do bigode, bochechas inferiores, mandíbula e queixo para estilização da barba
+    if (mode === 'BEARD_ONLY' || mode === 'HAIR_AND_BEARD') {
+      // Centro superior da face (entre olhos e topo do nariz) protegido
+      if (y >= minEyeY - eyeDistance * 0.10 && y <= nose.tipY && Math.abs(x - centerX) <= eyeDistance * 0.60) {
+        return true;
+      }
+      // Testa anatômica central protegida
+      if (y >= landmarks.hairline.centerHairlineY && y <= minEyeY && Math.abs(x - centerX) <= eyeDistance * 0.65) {
+        return true;
+      }
+      return false;
+    }
+
+    // Para modo HAIR_ONLY: Centro da Face e Bochechas protegidos
     if (
       y >= minEyeY - eyeDistance * 0.10 &&
-      y <= mouth.lowerLipY &&
+      y <= mouth.lowerLipY + eyeDistance * 0.18 &&
       Math.abs(x - centerX) <= eyeDistance * 0.65
     ) {
       return true;
@@ -104,18 +119,20 @@ export function isFaceProtectedRegion(
     }
 
     // Nariz
-    if (y >= geometry.eyeLineY && y <= geometry.noseTipY + eyeDist * 0.15 && distFromCenterX <= eyeDist * 0.35) {
+    if (y >= geometry.eyeLineY && y <= geometry.noseTipY && distFromCenterX <= eyeDist * 0.35) {
       return true;
     }
 
     // Boca
-    if (y >= geometry.mouthY - eyeDist * 0.20 && y <= geometry.mouthY + eyeDist * 0.25 && distFromCenterX <= eyeDist * 0.50) {
+    if (y >= geometry.mouthY - eyeDist * 0.10 && y <= geometry.mouthY + eyeDist * 0.10 && distFromCenterX <= eyeDist * 0.45) {
       return true;
     }
 
-    // Centro facial e testa central
-    if (y >= geometry.eyeLineY - eyeDist * 0.30 && y <= geometry.mouthY && distFromCenterX <= eyeDist * 0.65) {
-      return true;
+    if (mode !== 'BEARD_ONLY' && mode !== 'HAIR_AND_BEARD') {
+      // Centro facial e testa central
+      if (y >= geometry.eyeLineY - eyeDist * 0.30 && y <= geometry.mouthY + eyeDist * 0.20 && distFromCenterX <= eyeDist * 0.65) {
+        return true;
+      }
     }
 
     if (y >= geometry.hairlineY && y < geometry.eyeLineY - eyeDist * 0.25 && distFromCenterX <= eyeDist * 0.65) {
@@ -129,8 +146,8 @@ export function isFaceProtectedRegion(
   const distFromCenterX = Math.abs(normX - 0.5);
   if (normY >= 0.28 && normY <= 0.44 && distFromCenterX <= 0.30) return true;
   if (normY >= 0.38 && normY <= 0.58 && distFromCenterX <= 0.18) return true;
-  if (normY >= 0.56 && normY <= 0.74 && distFromCenterX <= 0.22) return true;
-  if (normY >= 0.28 && normY <= 0.74 && distFromCenterX <= 0.16) return true;
+  if (normY >= 0.56 && normY <= 0.74 && distFromCenterX <= 0.22 && mode === 'HAIR_ONLY') return true;
+  if (normY >= 0.28 && normY <= 0.74 && distFromCenterX <= 0.16 && mode === 'HAIR_ONLY') return true;
 
   return false;
 }
@@ -161,7 +178,10 @@ export function generateHairMaskPNG(
   const faceWidth = eyeDistance * 2.25;
   const eyeLineY = lm ? (lm.leftEye.centerY + lm.rightEye.centerY) / 2 : (geom ? geom.eyeLineY : height * 0.40);
   const hairlineY = lm ? lm.hairline.centerHairlineY : (geom ? geom.hairlineY : eyeLineY - eyeDistance * 0.85);
+  const noseTipY = lm ? lm.nose.tipY : (geom ? geom.noseTipY : eyeLineY + eyeDistance * 0.60);
   const mouthY = lm ? lm.mouth.centerY : (geom ? geom.mouthY : eyeLineY + eyeDistance * 1.15);
+  const upperLipY = lm ? lm.mouth.upperLipY : mouthY - eyeDistance * 0.12;
+  const lowerLipY = lm ? lm.mouth.lowerLipY : mouthY + eyeDistance * 0.12;
   const chinY = lm ? lm.jawline.chinTipY : (geom ? geom.chinY : eyeLineY + eyeDistance * 1.65);
 
   const earLevelY = eyeLineY + eyeDistance * 0.55;
@@ -176,7 +196,7 @@ export function generateHairMaskPNG(
       let maskVal = 0;
 
       // Se for área protegida da face, força 0
-      if (!isFaceProtectedRegion(normX, normY, geom, lm)) {
+      if (!isFaceProtectedRegion(normX, normY, geom, lm, mode)) {
         const distFromCenter = Math.abs(x - centerX);
 
         // 1. CABELO (HAIR_ONLY ou HAIR_AND_BEARD)
@@ -199,17 +219,19 @@ export function generateHairMaskPNG(
 
         // 2. BARBA (BEARD_ONLY ou HAIR_AND_BEARD)
         if (mode === 'BEARD_ONLY' || mode === 'HAIR_AND_BEARD') {
-          const beardStartY = mouthY + eyeDistance * 0.15;
-          const beardEndY = Math.min(height - 1, chinY + eyeDistance * 0.50);
-
-          if (y >= beardStartY && y <= beardEndY) {
-            // Queixo, mandíbula inferior e pescoço
-            if (distFromCenter <= faceWidth * 0.75) {
+          // A. Bigode (Mustache): entre a base do nariz e o lábio superior
+          if (y >= noseTipY && y < upperLipY && distFromCenter <= eyeDistance * 0.65) {
+            maskVal = 255;
+          }
+          // B. Queixo, cavanhaque, mandíbula inferior e pescoço
+          else if (y > lowerLipY && y <= Math.min(height - 1, chinY + eyeDistance * 0.60)) {
+            if (distFromCenter <= faceWidth * 0.80) {
               maskVal = 255;
             }
-          } else if (y >= eyeLineY + eyeDistance * 0.40 && y < beardStartY) {
-            // Costeletas inferiores, bochechas externas e bigode
-            if (distFromCenter > eyeDistance * 0.35 && distFromCenter <= faceWidth * 0.75) {
+          }
+          // C. Bochechas inferiores, costeletas em fade e laterais da mandíbula
+          else if (y >= eyeLineY + eyeDistance * 0.35 && y <= chinY) {
+            if (distFromCenter > eyeDistance * 0.35 && distFromCenter <= faceWidth * 0.80) {
               maskVal = 255;
             }
           }
