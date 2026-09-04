@@ -25,9 +25,11 @@ export function isFaceProtectedRegion(
 ): boolean {
   // 1. Prioridade para FaceLandmarks reais de alta precisão
   if (landmarks) {
-    const x = normX * landmarks.imageWidth;
-    const y = normY * landmarks.imageHeight;
-    const fb = landmarks.faceBox;
+    const imgW = landmarks.imageWidth || geometry?.imageWidth || 768;
+    const imgH = landmarks.imageHeight || geometry?.imageHeight || 1024;
+    const x = normX * imgW;
+    const y = normY * imgH;
+    const fb = landmarks.faceBox || { x: imgW * 0.25, y: imgH * 0.25, width: imgW * 0.5, height: imgH * 0.5 };
     const centerX = fb.x + fb.width / 2;
 
     const le = landmarks.leftEye;
@@ -51,44 +53,29 @@ export function isFaceProtectedRegion(
       return true;
     }
 
-    // C. Nariz (Ponte superior até a ponta e narinas)
-    const nose = landmarks.nose;
+    // C. Nariz completo, dorso e narinas (100% protegido)
     if (
-      Math.abs(x - centerX) <= eyeDistance * 0.35 &&
+      Math.abs(x - centerX) <= eyeDistance * 0.38 &&
       y >= minEyeY &&
-      y <= nose.tipY
+      y <= landmarks.nose.tipY + eyeDistance * 0.10
     ) {
       return true;
     }
 
-    // D. Boca e Lábios internos (abertura da boca e lábios)
+    // D. Boca e Lábios internos (100% protegido em TODOS os modos)
     const mouth = landmarks.mouth;
     if (
-      Math.abs(x - centerX) <= Math.max(eyeDistance * 0.45, mouth.width * 0.55) &&
+      Math.abs(x - centerX) <= Math.max(eyeDistance * 0.45, mouth.width * 0.50) &&
       y >= mouth.upperLipY &&
       y <= mouth.lowerLipY
     ) {
       return true;
     }
 
-    // Se o modo incluir barba (BEARD_ONLY ou HAIR_AND_BEARD):
-    // Liberamos a área do bigode, bochechas inferiores, mandíbula e queixo para estilização da barba
-    if (mode === 'BEARD_ONLY' || mode === 'HAIR_AND_BEARD') {
-      // Centro superior da face (entre olhos e topo do nariz) protegido
-      if (y >= minEyeY - eyeDistance * 0.10 && y <= nose.tipY && Math.abs(x - centerX) <= eyeDistance * 0.60) {
-        return true;
-      }
-      // Testa anatômica central protegida
-      if (y >= landmarks.hairline.centerHairlineY && y <= minEyeY && Math.abs(x - centerX) <= eyeDistance * 0.65) {
-        return true;
-      }
-      return false;
-    }
-
-    // Para modo HAIR_ONLY: Centro da Face e Bochechas protegidos
+    // E. Bochechas e Centro da Face (100% protegido em TODOS os modos)
     if (
       y >= minEyeY - eyeDistance * 0.10 &&
-      y <= mouth.lowerLipY + eyeDistance * 0.18 &&
+      y <= mouth.centerY &&
       Math.abs(x - centerX) <= eyeDistance * 0.65
     ) {
       return true;
@@ -96,7 +83,14 @@ export function isFaceProtectedRegion(
 
     // F. Testa anatômica central (Abaixo da linha capilar e acima das sobrancelhas)
     if (y >= landmarks.hairline.centerHairlineY && y <= minEyeY) {
-      if (Math.abs(x - centerX) <= eyeDistance * 0.65) {
+      if (Math.abs(x - centerX) <= eyeDistance * 0.60) {
+        return true;
+      }
+    }
+
+    // G. Para modo HAIR_ONLY: Queixo e Mandíbula 100% protegidos
+    if (mode === 'HAIR_ONLY') {
+      if (y > mouth.lowerLipY && y <= landmarks.jawline.chinTipY && Math.abs(x - centerX) <= eyeDistance * 0.70) {
         return true;
       }
     }
@@ -166,6 +160,10 @@ export function generateHairMaskPNG(
   const mode: MaskMode = options.mode || (options.includeBeard ? 'HAIR_AND_BEARD' : 'HAIR_ONLY');
   const geom = options.geometry;
   const lm = options.landmarks;
+  if (lm && !lm.imageWidth) {
+    lm.imageWidth = width;
+    lm.imageHeight = height;
+  }
 
   const rowBytes = width + 1;
   const rawData = Buffer.alloc(height * rowBytes, 0);
@@ -219,19 +217,15 @@ export function generateHairMaskPNG(
 
         // 2. BARBA (BEARD_ONLY ou HAIR_AND_BEARD)
         if (mode === 'BEARD_ONLY' || mode === 'HAIR_AND_BEARD') {
-          // A. Bigode (Mustache): entre a base do nariz e o lábio superior
-          if (y >= noseTipY && y < upperLipY && distFromCenter <= eyeDistance * 0.65) {
-            maskVal = 255;
-          }
-          // B. Queixo, cavanhaque, mandíbula inferior e pescoço
-          else if (y > lowerLipY && y <= Math.min(height - 1, chinY + eyeDistance * 0.60)) {
-            if (distFromCenter <= faceWidth * 0.90) {
+          // A. Queixo (abaixo do lábio inferior), contorno da barba e pescoço
+          if (y > lowerLipY && y <= Math.min(height - 1, chinY + eyeDistance * 0.55)) {
+            if (distFromCenter <= faceWidth * 0.85) {
               maskVal = 255;
             }
           }
-          // C. Bochechas inferiores, costeletas em fade e laterais da mandíbula
-          else if (y >= eyeLineY + eyeDistance * 0.35 && y <= chinY) {
-            if (distFromCenter >= eyeDistance * 0.40 && distFromCenter <= faceWidth * 0.90) {
+          // B. Mandíbula lateral externa, costeletas inferiores e fade da barba
+          else if (y >= earLevelY && y <= chinY) {
+            if (distFromCenter >= eyeDistance * 0.50 && distFromCenter <= faceWidth * 0.95) {
               maskVal = 255;
             }
           }

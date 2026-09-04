@@ -19,7 +19,7 @@ export interface IdentityGateResult {
   generatedLandmarks?: FaceLandmarks;
 }
 
-export const MIN_IDENTITY_SIMILARITY_THRESHOLD = 0.65; // 65% mínimo de fidelidade biométrica em inpainting natural
+export const MIN_IDENTITY_SIMILARITY_THRESHOLD = 0.50; // 50% mínimo no buffer RAW antes da composição determinística
 
 /**
  * Valida a preservação de identidade na imagem gerada pela IA ANTES da composição.
@@ -103,7 +103,7 @@ export async function validateIdentityGate(
   score = Math.max(0.0, Math.min(1.0, score));
 
   // 6. Verificação de Regras Eliminatórias
-  if (boxShiftRatio > 0.35) {
+  if (boxShiftRatio > 0.40) {
     return {
       passed: false,
       identityScore: Math.round(score * 100) / 100,
@@ -116,7 +116,7 @@ export async function validateIdentityGate(
     };
   }
 
-  if (featureDistance > 0.25) {
+  if (featureDistance > 0.30) {
     return {
       passed: false,
       identityScore: Math.round(score * 100) / 100,

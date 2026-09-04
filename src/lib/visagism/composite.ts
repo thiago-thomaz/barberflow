@@ -27,7 +27,7 @@ export async function compositeInpaintingResult(params: {
   featherSigma?: number;
   mode?: string;
 }): Promise<CompositeResult> {
-  const { originalBuffer, generatedBuffer, maskBuffer, faceBox, featherSigma = 2.5, mode = 'HAIR_ONLY' } = params;
+  const { originalBuffer, generatedBuffer, maskBuffer, faceBox, featherSigma = 1.2, mode = 'HAIR_ONLY' } = params;
 
   // 1. Decodifica a imagem original e obtém dimensões canônicas
   const origSharp = sharp(originalBuffer);
