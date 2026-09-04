@@ -16,6 +16,7 @@ import { extractFaceLandmarks } from '@/lib/visagism/face-landmarks';
 import { preflightCheckUserPhoto, detectFaceGeometry } from '@/lib/visagism/face-detector';
 import { validateIdentityQuality } from '@/lib/visagism/gate';
 import type { MaskMode } from '@/lib/visagism/types';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,10 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const { targetImageUrl, haircutName, haircutId, clientLandmarks } = body;
 
     if (!token) {
+      logger.warn('[GENERATE_PREVIEW] Requisição sem token de sessão', {
+        module: 'VISAGISM_API',
+        action: 'MISSING_TOKEN',
+      });
       return NextResponse.json({ error: 'Token inválido' }, { status: 400 });
     }
 
@@ -42,8 +47,19 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     });
 
     if (!session || session.status === 'EXPIRED') {
+      logger.warn(`[GENERATE_PREVIEW] Sessão não encontrada ou expirada para token: ${token.slice(0, 8)}...`, {
+        module: 'VISAGISM_API',
+        action: 'SESSION_INVALID_OR_EXPIRED',
+      });
       return NextResponse.json({ error: 'Sessão não encontrada ou expirada' }, { status: 404 });
     }
+
+    logger.visagism('GENERATION_REQUEST_STARTED', {
+      sessionId: session.id,
+      barbershopId: session.barbershopId,
+      haircutName,
+      haircutId,
+    });
 
     // 2. Limite de gerações aprovadas por sessão (padrão 3)
     const MAX_GENERATIONS = parseInt(process.env.VISAGISM_MAX_GENERATIONS_PER_SESSION || '3', 10);
@@ -55,6 +71,13 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     });
 
     if (existingGenerations >= MAX_GENERATIONS) {
+      logger.visagism('LIMIT_REACHED', {
+        sessionId: session.id,
+        barbershopId: session.barbershopId,
+        existingGenerations,
+        maxGenerations: MAX_GENERATIONS,
+      });
+
       return NextResponse.json({
         success: false,
         message: `Você já atingiu o limite de ${MAX_GENERATIONS} simulações gratuitas para esta sessão.`,
@@ -72,6 +95,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     });
 
     if (totalAttempts >= 8) {
+      logger.warn(`[GENERATE_PREVIEW] Limite técnico de 8 tentativas atingido para sessão: ${session.id}`, {
+        module: 'VISAGISM_API',
+        action: 'MAX_ATTEMPTS_EXCEEDED',
+        tenantId: session.barbershopId,
+      });
+
       return NextResponse.json({
         success: false,
         message: 'Limite de tentativas técnicas atingido para esta sessão. Entre em contato com a barbearia.',
@@ -99,6 +128,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     }
 
     if (!clientBuffer) {
+      logger.warn(`[GENERATE_PREVIEW] Foto original não encontrada para sessão: ${session.id}`, {
+        module: 'VISAGISM_API',
+        action: 'ORIGINAL_PHOTO_MISSING',
+        tenantId: session.barbershopId,
+      });
+
       return NextResponse.json({
         success: false,
         message: 'Foto original do cliente não encontrada. Por favor, envie sua foto primeiro.',
@@ -107,7 +142,20 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     }
 
     // 5. PRE-FLIGHT QUALITY CHECK (Executado ANTES de chamar a IA para não gastar créditos)
+    const preflightStart = Date.now();
     const preflight = await preflightCheckUserPhoto(clientBuffer);
+    const preflightDurationMs = Date.now() - preflightStart;
+
+    logger.visagism('PREFLIGHT_CHECK', {
+      sessionId: session.id,
+      barbershopId: session.barbershopId,
+      valid: preflight.valid,
+      width: preflight.width,
+      height: preflight.height,
+      reason: preflight.reason,
+      durationMs: preflightDurationMs,
+    });
+
     if (!preflight.valid) {
       return NextResponse.json({
         success: false,
@@ -118,10 +166,20 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     }
 
     // 6. DETECÇÃO DE MARCOS FACIAIS ANATÔMICOS REAIS (Olhos, Nariz, Boca, Hairline)
+    const lmStart = Date.now();
     const landmarks = await extractFaceLandmarks(clientBuffer, preflight.width, preflight.height);
     const geometry =
       preflight.geometry ||
       (await detectFaceGeometry(clientBuffer, preflight.width, preflight.height, clientLandmarks));
+    const lmDurationMs = Date.now() - lmStart;
+
+    logger.visagism('LANDMARKS_EXTRACTED', {
+      sessionId: session.id,
+      barbershopId: session.barbershopId,
+      confidence: landmarks.confidence,
+      faceBox: landmarks.faceBox,
+      durationMs: lmDurationMs,
+    });
 
     // 7. Catálogo e Prompts de Edição Restrita
     const catalogItem = HAIRCUTS_CATALOG.find(
@@ -146,6 +204,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const negativePrompt = catalogItem?.negativePrompt;
 
     // 8. GERA MÁSCARA DINÂMICA ANATÔMICA ANCORADA NOS MARCOS REAIS
+    const maskStart = Date.now();
     const maskBuffer = generateMaskByMode(
       maskMode,
       preflight.width,
@@ -153,6 +212,15 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       geometry,
       landmarks
     );
+    const maskDurationMs = Date.now() - maskStart;
+
+    logger.visagism('MASK_GENERATED', {
+      sessionId: session.id,
+      barbershopId: session.barbershopId,
+      maskMode,
+      maskBytes: maskBuffer.length,
+      durationMs: maskDurationMs,
+    });
 
     // Registra tentativa
     await recordVisagismMetric({
@@ -163,6 +231,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     });
 
     // 9. EXECUTA FLUX.1 FILL + IDENTITY GATE BIOMÉTRICO + COMPOSIÇÃO DETERMINÍSTICA
+    logger.info(`[GENERATE_PREVIEW] Disparando Replicate FLUX Inpainting para ${cleanCutName}...`, {
+      module: 'VISAGISM_API',
+      tenantId: session.barbershopId,
+      metadata: { sessionId: session.id, haircutName: cleanCutName, maskMode },
+    });
+
     const genResult = await replicateImageProvider.generatePreview({
       originalImageBuffer: clientBuffer,
       originalImageMimeType: clientMime,
@@ -177,6 +251,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const latencyMs = Date.now() - startTime;
 
     if (!genResult || !genResult.finalCompositeBuffer) {
+      logger.warn(`[GENERATE_PREVIEW] Falha na geração Replicate (Output nulo) após ${latencyMs}ms`, {
+        module: 'VISAGISM_API',
+        tenantId: session.barbershopId,
+        metadata: { sessionId: session.id, haircutName: cleanCutName, latencyMs },
+      });
+
       await recordVisagismMetric({
         barbershopId: session.barbershopId,
         sessionId: session.id,
@@ -192,6 +272,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     }
 
     // 10. TRI-GATE DE PRESERVAÇÃO DE IDENTIDADE E PIXELS
+    const gateStart = Date.now();
     const gateResult = await validateIdentityQuality({
       imageUrl: genResult.imageUrl,
       imageBuffer: genResult.finalCompositeBuffer,
@@ -200,6 +281,18 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       faceSSIM: genResult.faceSSIM,
       haircutName: cleanCutName,
       latencyMs,
+    });
+    const gateDurationMs = Date.now() - gateStart;
+
+    logger.visagism('IDENTITY_QUALITY_GATE', {
+      sessionId: session.id,
+      barbershopId: session.barbershopId,
+      passed: gateResult.passed,
+      score: gateResult.score,
+      outsideDiff: genResult.outsideMaskPixelChangeRatio,
+      faceSSIM: genResult.faceSSIM,
+      reason: gateResult.reason,
+      durationMs: gateDurationMs,
     });
 
     if (!gateResult.passed) {
@@ -256,6 +349,17 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     const remaining = Math.max(0, MAX_GENERATIONS - (existingGenerations + 1));
     const finalPreviewUrl = `/api/visagismo/session/${token}/preview/${previewFileName}`;
 
+    logger.visagism('PREVIEW_COMPLETED_SUCCESS', {
+      sessionId: session.id,
+      barbershopId: session.barbershopId,
+      haircutName: cleanCutName,
+      previewUrl: finalPreviewUrl,
+      remainingGenerations: remaining,
+      latencyMs,
+      faceSSIM: genResult.faceSSIM,
+      identityScore: genResult.identityScore,
+    });
+
     return NextResponse.json({
       success: true,
       previewUrl: finalPreviewUrl,
@@ -267,7 +371,12 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       identityScore: genResult.identityScore,
     });
   } catch (error: any) {
-    console.error('[GENERATE_PREVIEW] Erro interno:', error);
+    const errorLatencyMs = Date.now() - startTime;
+    logger.error('[GENERATE_PREVIEW] Erro interno durante geração de preview:', error, {
+      module: 'VISAGISM_API',
+      action: 'INTERNAL_ERROR',
+      durationMs: errorLatencyMs,
+    });
     return NextResponse.json({ error: 'Erro interno ao processar geração' }, { status: 500 });
   }
 }

@@ -6,9 +6,12 @@ import { generateHairMaskPNG } from '../mask.ts';
 import { compositeInpaintingResult } from '../composite.ts';
 import { extractFaceLandmarks } from '../face-landmarks.ts';
 import { validateIdentityGate } from '../identity-gate.ts';
+import { logger, maskToken } from '../../logger.ts';
 
-function getReplicateToken(): string {
-  if (process.env.REPLICATE_API_TOKEN) return process.env.REPLICATE_API_TOKEN;
+function getReplicateToken(): { token: string; source: string } {
+  if (process.env.REPLICATE_API_TOKEN) {
+    return { token: process.env.REPLICATE_API_TOKEN, source: 'process.env.REPLICATE_API_TOKEN' };
+  }
   try {
     const envPaths = [
       path.join(process.cwd(), '.env'),
@@ -23,12 +26,12 @@ function getReplicateToken(): string {
         if (match) {
           let val = match[1].trim();
           if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
-          if (val) return val;
+          if (val) return { token: val, source: `file:${p}` };
         }
       }
     }
   } catch (e) {}
-  return '';
+  return { token: '', source: 'none' };
 }
 
 /**
@@ -55,9 +58,21 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
 
   async generatePreview(input: GeneratePreviewInput): Promise<GeneratePreviewResult | null> {
     const startTime = Date.now();
-    const token = getReplicateToken();
+    const tokenInfo = getReplicateToken();
+    const token = tokenInfo.token;
+
+    // 1. Log: Verificação de Token
+    logger.replicate('TOKEN_CHECK', {
+      tokenFound: !!token,
+      tokenSource: tokenInfo.source,
+      tokenMasked: maskToken(token),
+    });
+
     if (!token) {
-      console.warn('[VISAGISM_PROVIDER] REPLICATE_API_TOKEN não configurado.');
+      logger.warn('[VISAGISM_PROVIDER] REPLICATE_API_TOKEN não configurado.', {
+        module: 'REPLICATE_INPAINTING',
+        action: 'TOKEN_MISSING',
+      });
       return null;
     }
 
@@ -73,10 +88,23 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         landmarks,
       } = input;
 
-      // 1. Extrai landmarks se não foram fornecidos
+      // 2. Extrai landmarks se não foram fornecidos
+      const landmarkStart = Date.now();
       const faceLM = landmarks || (await extractFaceLandmarks(originalImageBuffer));
+      const landmarkDurationMs = Date.now() - landmarkStart;
 
-      // 2. Prepara imagem original e máscara anatômica
+      // 3. Log: Validação de Entrada
+      logger.replicate('INPUT_VALIDATION', {
+        inputBytes: originalImageBuffer.length,
+        mimeType: originalImageMimeType || 'image/jpeg',
+        imageDimensions: { width: faceLM.imageWidth, height: faceLM.imageHeight },
+        faceBox: faceLM.faceBox,
+        confidence: faceLM.confidence,
+        landmarkDurationMs,
+      });
+
+      // 4. Prepara imagem original e máscara anatômica
+      const maskStart = Date.now();
       const base64Image = `data:${originalImageMimeType || 'image/jpeg'};base64,${originalImageBuffer.toString('base64')}`;
       const finalMaskBuffer =
         maskBuffer ||
@@ -85,23 +113,20 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
           landmarks: faceLM,
           geometry,
         });
+      const maskDurationMs = Date.now() - maskStart;
       const base64Mask = `data:image/png;base64,${finalMaskBuffer.toString('base64')}`;
 
       const promptHash = crypto.createHash('md5').update(stylePrompt).digest('hex').slice(0, 8);
 
-      console.log(
-        JSON.stringify({
-          event: 'visagism_flux_request_started',
-          provider: this.name,
-          model: this.inpaintModel,
-          input_bytes: originalImageBuffer.length,
-          mask_bytes: finalMaskBuffer.length,
-          mask_mode: maskMode,
-          prompt_hash: promptHash,
-        })
-      );
+      // 5. Log: Geração de Máscara
+      logger.replicate('MASK_GENERATION', {
+        maskMode,
+        maskBytes: finalMaskBuffer.length,
+        maskDurationMs,
+        customMaskProvided: !!maskBuffer,
+      });
 
-      // 3. Prompt estritamente de edição e estilo capilar de alta definição
+      // 6. Prompt estritamente de edição e estilo capilar de alta definição
       let cleanPrompt = stylePrompt;
       if (
         !cleanPrompt.toLowerCase().includes('fade') &&
@@ -113,7 +138,15 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         cleanPrompt = `Apply photorealistic men's ${stylePrompt} haircut, sharp fade gradient on temples, crisp natural hairline, highly detailed hair strands, barbershop styling, natural hair sheen, 8k resolution, cinematic studio lighting`;
       }
 
-      // 4. Payload específico e calibrado para o FLUX.1 Fill Dev
+      // 7. Log: Compilação do Prompt
+      logger.replicate('PROMPT_COMPILATION', {
+        rawPrompt: stylePrompt,
+        compiledPrompt: cleanPrompt,
+        promptHash,
+        negativePrompt: negativePrompt || 'none',
+      });
+
+      // 8. Payload específico e calibrado para o FLUX.1 Fill Dev
       const payloadInput = {
         image: base64Image,
         mask: base64Mask,
@@ -126,10 +159,23 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
 
       let res: Response | null = null;
       let retries = 0;
+      let targetEndpoint = 'https://api.replicate.com/v1/predictions';
+
+      // 9. Log: Disparo Inicial da Predição
+      logger.replicate('PREDICTION_DISPATCH', {
+        model: this.inpaintModel,
+        modelVersion: this.modelVersion,
+        endpoint: targetEndpoint,
+        guidance: payloadInput.guidance,
+        steps: payloadInput.num_inference_steps,
+        outputFormat: payloadInput.output_format,
+        outputQuality: payloadInput.output_quality,
+        promptHash,
+      });
 
       // Retry com backoff se receber rate limit (HTTP 429)
       while (retries < 4) {
-        res = await fetch('https://api.replicate.com/v1/predictions', {
+        res = await fetch(targetEndpoint, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
@@ -144,13 +190,27 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
 
         if (res.status === 429) {
           retries++;
-          await new Promise((r) => setTimeout(r, 2000 * retries));
+          const waitDelayMs = 2000 * retries;
+          logger.replicate('RATE_LIMIT_BACKOFF', {
+            httpStatus: 429,
+            attempt: retries,
+            retryDelayMs: waitDelayMs,
+            endpoint: targetEndpoint,
+          });
+          await new Promise((r) => setTimeout(r, waitDelayMs));
           continue;
         }
 
         // Fallback para endpoint oficial do modelo caso a versão específica retorne 404
         if (res.status === 404) {
-          res = await fetch(`https://api.replicate.com/v1/models/${this.inpaintModel}/predictions`, {
+          targetEndpoint = `https://api.replicate.com/v1/models/${this.inpaintModel}/predictions`;
+          logger.replicate('ENDPOINT_FALLBACK', {
+            httpStatus: 404,
+            fallbackEndpoint: targetEndpoint,
+            model: this.inpaintModel,
+          });
+
+          res = await fetch(targetEndpoint, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${token}`,
@@ -167,58 +227,103 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
 
       if (!res || !res.ok) {
         const errBody = res ? await res.text() : 'No response';
-        console.warn('[VISAGISM_PROVIDER] Replicate HTTP Error status:', res?.status, errBody);
+        logger.replicate('PREDICTION_ERROR', {
+          httpStatus: res?.status,
+          endpoint: targetEndpoint,
+          error: errBody,
+        });
         return null;
       }
 
       let data = await res.json();
+      const predictionId = data.id;
 
-      // Polling resiliente caso ultrapasse o timeout inicial
+      // 10. Polling resiliente caso ultrapasse o timeout inicial
       let attempts = 0;
       while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 35) {
         if (!data.urls?.get) break;
         await new Promise((r) => setTimeout(r, 2000));
+        attempts++;
+
+        const pollStart = Date.now();
         const pollRes = await fetch(data.urls.get, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        const pollLatencyMs = Date.now() - pollStart;
         data = await pollRes.json();
-        attempts++;
+
+        logger.replicate('POLLING_STATUS', {
+          predictionId,
+          status: data.status,
+          attempt: attempts,
+          pollLatencyMs,
+          elapsedMs: Date.now() - startTime,
+        });
       }
 
-      const latencyMs = Date.now() - startTime;
+      const totalApiLatencyMs = Date.now() - startTime;
 
       if (data.status === 'succeeded' && data.output) {
         const outputUrl = typeof data.output === 'string' ? data.output : data.output[0] || null;
         if (outputUrl) {
-          // 5. Baixa a imagem gerada (RAW)
+          // 11. Baixa a imagem gerada (RAW)
+          const imgDlStart = Date.now();
           const imgFetch = await fetch(outputUrl);
           if (!imgFetch.ok) {
-            console.warn('[VISAGISM_PROVIDER] Falha ao baixar imagem gerada:', imgFetch.status);
+            logger.replicate('PREDICTION_ERROR', {
+              predictionId,
+              step: 'IMAGE_DOWNLOAD',
+              httpStatus: imgFetch.status,
+              outputUrl,
+            });
             return null;
           }
           const rawGeneratedBuffer = Buffer.from(await imgFetch.arrayBuffer());
+          const imgDlLatencyMs = Date.now() - imgDlStart;
 
-          // 6. Executa o IDENTITY GATE no buffer RAW ANTES de compor
+          logger.replicate('IMAGE_DOWNLOADED', {
+            predictionId,
+            outputUrl,
+            downloadBytes: rawGeneratedBuffer.length,
+            imgDlLatencyMs,
+          });
+
+          // 12. Executa o IDENTITY GATE no buffer RAW ANTES de compor
+          const gateStart = Date.now();
           const identityCheck = await validateIdentityGate({
             originalBuffer: originalImageBuffer,
             generatedRawBuffer: rawGeneratedBuffer,
             maskBuffer: finalMaskBuffer,
           });
+          const gateLatencyMs = Date.now() - gateStart;
+
+          logger.replicate('IDENTITY_GATE_EVALUATED', {
+            predictionId,
+            passed: identityCheck.passed,
+            identityScore: identityCheck.identityScore,
+            boxShiftRatio: identityCheck.boxShiftRatio,
+            featureDistance: identityCheck.featureDistance,
+            reason: identityCheck.reason,
+            gateLatencyMs,
+          });
 
           if (!identityCheck.passed) {
-            console.warn(
-              JSON.stringify({
-                event: 'visagism_identity_gate_rejected',
+            logger.warn(`[REPLICATE_AI] Identity Gate rejeitou imagem RAW gerada: ${identityCheck.reason}`, {
+              module: 'REPLICATE_INPAINTING',
+              action: 'IDENTITY_GATE_REJECTED',
+              metadata: {
+                predictionId,
+                identityScore: identityCheck.identityScore,
+                boxShiftRatio: identityCheck.boxShiftRatio,
+                featureDistance: identityCheck.featureDistance,
                 reason: identityCheck.reason,
-                identity_score: identityCheck.identityScore,
-                box_shift: identityCheck.boxShiftRatio,
-                feature_dist: identityCheck.featureDistance,
-              })
-            );
+              },
+            });
             return null;
           }
 
-          // 7. Executa a COMPOSIÇÃO DETERMINÍSTICA BIT A BIT com Smoothstep S-Curve
+          // 13. Executa a COMPOSIÇÃO DETERMINÍSTICA BIT A BIT com Smoothstep S-Curve
+          const compStart = Date.now();
           const compResult = await compositeInpaintingResult({
             originalBuffer: originalImageBuffer,
             generatedBuffer: rawGeneratedBuffer,
@@ -227,25 +332,34 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
             featherSigma: 3.5,
             mode: maskMode,
           });
+          const compLatencyMs = Date.now() - compStart;
+          const totalLatencyMs = Date.now() - startTime;
 
-          console.log(
-            JSON.stringify({
-              event: 'visagism_flux_success',
-              provider: this.name,
-              generation_id: data.id,
-              latency_ms: latencyMs,
-              identity_score: identityCheck.identityScore,
-              outside_diff: compResult.outsideMaskPixelChangeRatio,
-              face_ssim: compResult.faceSSIM,
-            })
-          );
+          logger.replicate('COMPOSITE_COMPLETED', {
+            predictionId,
+            outsideDiffRatio: compResult.outsideMaskPixelChangeRatio,
+            faceSSIM: compResult.faceSSIM,
+            compLatencyMs,
+            totalLatencyMs,
+          });
+
+          logger.replicate('PREDICTION_SUCCESS', {
+            predictionId,
+            provider: this.name,
+            model: this.inpaintModel,
+            latencyMs: totalLatencyMs,
+            identityScore: identityCheck.identityScore,
+            faceSSIM: compResult.faceSSIM,
+            outsideDiffRatio: compResult.outsideMaskPixelChangeRatio,
+            outputUrl,
+          });
 
           return {
             imageUrl: outputUrl,
             provider: this.name,
             generationId: data.id,
             maskMode,
-            latencyMs,
+            latencyMs: totalLatencyMs,
             rawGeneratedBuffer,
             finalCompositeBuffer: compResult.compositeBuffer,
             outsideMaskPixelChangeRatio: compResult.outsideMaskPixelChangeRatio,
@@ -255,10 +369,32 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         }
       }
 
-      console.warn('[VISAGISM_PROVIDER] Predição não sucedeu:', data.status, data.error);
+      if (data.status === 'failed' || data.status === 'canceled') {
+        logger.replicate(data.status === 'failed' ? 'PREDICTION_FAILED' : 'PREDICTION_CANCELED', {
+          predictionId,
+          status: data.status,
+          error: data.error,
+          latencyMs: totalApiLatencyMs,
+        });
+      } else {
+        logger.warn(`[REPLICATE_AI] Predição finalizou em estado inesperado: ${data.status}`, {
+          module: 'REPLICATE_INPAINTING',
+          action: 'UNEXPECTED_STATUS',
+          metadata: { predictionId, status: data.status, error: data.error },
+        });
+      }
+
       return null;
-    } catch (err) {
-      console.error('[VISAGISM_PROVIDER] Erro durante inpainting:', err);
+    } catch (err: any) {
+      const errorLatencyMs = Date.now() - startTime;
+      logger.replicate('PREDICTION_ERROR', {
+        error: {
+          name: err?.name || 'Error',
+          message: err?.message || String(err),
+          stack: err?.stack,
+        },
+        latencyMs: errorLatencyMs,
+      });
       return null;
     }
   }

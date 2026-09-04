@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processWhatsAppMessage } from '@/lib/whatsapp/engine';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,14 +14,20 @@ export async function GET(req: NextRequest) {
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || 'barberflow_webhook_verify_secret';
 
   if (mode === 'subscribe' && token === verifyToken) {
+    logger.whatsapp('WEBHOOK_VERIFIED', { actionTaken: 'hub.challenge returned' });
     return new NextResponse(challenge, { status: 200 });
   }
 
+  logger.warn('[WHATSAPP_WEBHOOK] Falha na verificação de token Meta Cloud', {
+    module: 'WHATSAPP_WEBHOOK',
+    action: 'VERIFICATION_FAILED',
+  });
   return NextResponse.json({ error: 'Verificação falhou' }, { status: 403 });
 }
 
 // POST /api/webhooks/whatsapp - Receive inbound WhatsApp messages (Meta Cloud, n8n, or simulator)
 export async function POST(req: NextRequest) {
+  const startTime = Date.now();
   try {
     const body = await req.json();
 
@@ -57,6 +64,12 @@ export async function POST(req: NextRequest) {
       const tenantPhoneId = metadata?.phone_number_id;
       const receiverPhone = metadata?.display_phone_number || tenantPhoneId;
 
+      logger.whatsapp('META_CLOUD_MESSAGE_RECEIVED', {
+        from,
+        text,
+        actionTaken: 'processWhatsAppMessage',
+      });
+
       const result = await processWhatsAppMessage({
         from,
         text: text || '[FOTO]',
@@ -66,6 +79,13 @@ export async function POST(req: NextRequest) {
         mediaUrl: mediaUrl || undefined,
         mediaMimeType: mediaMimeType || undefined,
         mediaType,
+      });
+
+      const durationMs = Date.now() - startTime;
+      logger.http('POST', '/api/webhooks/whatsapp', 200, durationMs, {
+        source: 'MetaCloud',
+        from,
+        actionTaken: result?.action,
       });
 
       return NextResponse.json({ success: true, result });
@@ -102,6 +122,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    logger.whatsapp('DIRECT_MESSAGE_RECEIVED', {
+      from,
+      phone: from,
+      text: messageText,
+      barbershopId,
+      actionTaken: 'processWhatsAppMessage',
+    });
+
     const result = await processWhatsAppMessage({
       from,
       text: messageText,
@@ -115,12 +143,23 @@ export async function POST(req: NextRequest) {
       mediaType: mediaType || (resolvedMediaBase64 || resolvedMediaUrl ? 'image' : 'text'),
     });
 
+    const durationMs = Date.now() - startTime;
+    logger.http('POST', '/api/webhooks/whatsapp', 200, durationMs, {
+      source: 'Direct/WAHA',
+      from,
+      actionTaken: result?.action,
+    });
+
     return NextResponse.json({
       success: true,
       result,
     });
   } catch (error: any) {
-    console.error('WhatsApp Webhook Error:', error);
+    const durationMs = Date.now() - startTime;
+    logger.error('WhatsApp Webhook Error:', error, {
+      module: 'WHATSAPP_WEBHOOK',
+      durationMs,
+    });
     return NextResponse.json(
       { error: 'Erro ao processar mensagem do WhatsApp', details: error.message },
       { status: 500 }

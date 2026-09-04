@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { prisma } from './prisma';
+import { logger } from './logger';
 
 export type EventType =
   | 'APPOINTMENT_CREATED'
@@ -58,6 +59,17 @@ export async function publishEvent(
 
   const payloadString = JSON.stringify(payload);
 
+  logger.info(`[EVENT_BUS] Evento emitido: ${eventType}`, {
+    module: 'EVENT_BUS',
+    tenantId,
+    action: eventType,
+    metadata: {
+      eventType,
+      references,
+      summary: data?.summary || data?.name || undefined,
+    },
+  });
+
   // 1. Save event in database
   const eventRecord = await prisma.automationEvent.create({
     data: {
@@ -71,7 +83,11 @@ export async function publishEvent(
 
   // 2. Dispatch to active webhooks for this barbershop asynchronously
   dispatchWebhooks(tenantId, eventType, payload, eventRecord.id).catch((err) => {
-    console.error(`Error dispatching webhook for event ${eventType}:`, err);
+    logger.error(`[EVENT_BUS] Erro ao despachar webhook para evento ${eventType}:`, err, {
+      module: 'EVENT_BUS',
+      tenantId,
+      action: 'DISPATCH_ERROR',
+    });
   });
 
   return eventRecord;
@@ -125,6 +141,17 @@ async function dispatchWebhooks(
 
       clearTimeout(timeout);
 
+      logger.info(`[WEBHOOK_DISPATCH] Webhook ${webhook.url} respondeu com status ${response.status}`, {
+        module: 'WEBHOOK_DISPATCH',
+        tenantId,
+        action: eventType,
+        metadata: {
+          url: webhook.url,
+          status: response.status,
+          delivered: response.ok,
+        },
+      });
+
       await prisma.webhook.update({
         where: { id: webhook.id },
         data: {
@@ -141,7 +168,12 @@ async function dispatchWebhooks(
         },
       });
     } catch (err: any) {
-      console.warn(`Webhook call to ${webhook.url} failed:`, err.message);
+      logger.warn(`[WEBHOOK_DISPATCH] Chamada para ${webhook.url} falhou: ${err.message}`, {
+        module: 'WEBHOOK_DISPATCH',
+        tenantId,
+        metadata: { url: webhook.url, error: err.message },
+      });
+
       await prisma.webhook.update({
         where: { id: webhook.id },
         data: {

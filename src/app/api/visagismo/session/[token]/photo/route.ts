@@ -7,6 +7,7 @@ import {
   deleteVisagismPhoto,
   VISAGISM_STORAGE_DIR,
 } from '@/lib/visagism/engine';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,7 @@ export async function GET(
       },
     });
   } catch (error: any) {
+    logger.error('[PHOTO_GET] Erro ao carregar foto privada', error);
     return new NextResponse('Erro ao carregar imagem', { status: 500 });
   }
 }
@@ -50,11 +52,16 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { token: string } }
 ) {
+  const startTime = Date.now();
   try {
     const { token } = params;
     const session = await getVisagismSessionByToken(token);
 
     if (!session) {
+      logger.warn('[PHOTO_UPLOAD] Tentativa de upload em sessão inválida', {
+        module: 'VISAGISM_PHOTO',
+        action: 'INVALID_SESSION',
+      });
       return NextResponse.json({ error: 'Sessão inválida ou expirada' }, { status: 404 });
     }
 
@@ -110,11 +117,26 @@ export async function POST(
       return NextResponse.json({ error: 'Falha ao processar arquivo de imagem' }, { status: 400 });
     }
 
+    logger.visagism('PHOTO_UPLOADED', {
+      sessionId: session.id,
+      barbershopId: session.barbershopId,
+      bytes: fileBuffer.length,
+      mimeType,
+    });
+
     const result = await saveVisagismPhoto({
       sessionId: session.id,
       fileBuffer,
       mimeType,
       originalName,
+    });
+
+    const durationMs = Date.now() - startTime;
+    logger.visagism('PHOTO_SAVED', {
+      sessionId: session.id,
+      barbershopId: session.barbershopId,
+      detectedFaceShape: result.detectedFaceShape,
+      durationMs,
     });
 
     return NextResponse.json({
@@ -125,7 +147,10 @@ export async function POST(
       notes: result.notes,
     });
   } catch (error: any) {
-    console.error('Visagism photo upload error:', error);
+    logger.error('[PHOTO_UPLOAD] Erro ao processar upload de foto:', error, {
+      module: 'VISAGISM_PHOTO',
+      action: 'UPLOAD_ERROR',
+    });
     return NextResponse.json(
       { error: error.message || 'Erro ao processar foto' },
       { status: 400 }
@@ -148,11 +173,17 @@ export async function DELETE(
 
     await deleteVisagismPhoto(session.id);
 
+    logger.visagism('PHOTO_DELETED_LGPD', {
+      sessionId: session.id,
+      barbershopId: session.barbershopId,
+    });
+
     return NextResponse.json({
       success: true,
       message: 'Foto excluída com sucesso em conformidade com a LGPD',
     });
   } catch (error: any) {
+    logger.error('[PHOTO_DELETE] Erro ao excluir foto (LGPD)', error);
     return NextResponse.json(
       { error: 'Erro ao excluir foto', details: error.message },
       { status: 500 }
