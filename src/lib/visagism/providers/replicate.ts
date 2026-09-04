@@ -45,11 +45,11 @@ function getReplicateToken(): { token: string; source: string } {
 export class ReplicateInpaintingVisagismProvider implements VisagismImageProvider {
   name = 'REPLICATE_FLUX_FILL';
 
-  // Modelo oficial SOTA de Inpainting do Replicate
+  // Modelo oficial SOTA de Inpainting do Replicate (flux-fill-pro responde em ~6-8s na infraestrutura rápida)
   private readonly inpaintModel =
     process.env.VISAGISM_INPAINT_MODEL ||
     process.env.REPLICATE_INPAINT_MODEL ||
-    'black-forest-labs/flux-fill-dev';
+    'black-forest-labs/flux-fill-pro';
 
   // Hash oficial verificado do FLUX.1 Fill Dev
   private readonly modelVersion =
@@ -145,20 +145,30 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         ? parseFloat(process.env.VISAGISM_FLUX_GUIDANCE)
         : 30.0;
 
-      // 8. Payload específico e calibrado para o FLUX.1 Fill Dev (guidance 30 para forte adesão ao prompt dentro da máscara)
-      const payloadInput = {
+      // 8. Payload calibrado para FLUX.1 Fill (Pro ou Dev)
+      const isProModel = this.inpaintModel.includes('pro');
+      const payloadInput: any = {
         image: base64Image,
         mask: base64Mask,
         prompt: cleanPrompt,
         guidance: fluxGuidance,
-        num_inference_steps: 30,
         output_format: 'jpg',
-        output_quality: 95,
       };
+
+      if (!isProModel) {
+        payloadInput.num_inference_steps = 30;
+        payloadInput.output_quality = 95;
+      }
 
       let res: Response | null = null;
       let retries = 0;
-      let targetEndpoint = 'https://api.replicate.com/v1/predictions';
+      let targetEndpoint = isProModel
+        ? `https://api.replicate.com/v1/models/${this.inpaintModel}/predictions`
+        : 'https://api.replicate.com/v1/predictions';
+
+      const requestPayload = isProModel
+        ? { input: payloadInput }
+        : { version: this.modelVersion, input: payloadInput };
 
       // 9. Log: Disparo Inicial da Predição
       logger.replicate('PREDICTION_DISPATCH', {
@@ -166,9 +176,7 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         modelVersion: this.modelVersion,
         endpoint: targetEndpoint,
         guidance: payloadInput.guidance,
-        steps: payloadInput.num_inference_steps,
         outputFormat: payloadInput.output_format,
-        outputQuality: payloadInput.output_quality,
         promptHash,
       });
 
@@ -181,10 +189,7 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
             'Content-Type': 'application/json',
             Prefer: 'wait',
           },
-          body: JSON.stringify({
-            version: this.modelVersion,
-            input: payloadInput,
-          }),
+          body: JSON.stringify(requestPayload),
         });
 
         if (res.status === 429) {
@@ -200,8 +205,8 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
           continue;
         }
 
-        // Fallback para endpoint oficial do modelo caso a versão específica retorne 404
-        if (res.status === 404) {
+        // Fallback para endpoint de modelo caso a versão específica retorne 404
+        if (res.status === 404 && !isProModel) {
           targetEndpoint = `https://api.replicate.com/v1/models/${this.inpaintModel}/predictions`;
           logger.replicate('ENDPOINT_FALLBACK', {
             httpStatus: 404,
