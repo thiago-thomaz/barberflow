@@ -128,14 +128,9 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
 
       // 6. Prompt estritamente de edição e estilo capilar de alta definição
       let cleanPrompt = stylePrompt;
-      if (
-        !cleanPrompt.toLowerCase().includes('fade') &&
-        !cleanPrompt.toLowerCase().includes('cut') &&
-        !cleanPrompt.toLowerCase().includes('beard') &&
-        !cleanPrompt.toLowerCase().includes('hair') &&
-        !cleanPrompt.toLowerCase().includes('apply')
-      ) {
-        cleanPrompt = `Apply photorealistic men's ${stylePrompt} haircut, sharp fade gradient on temples, crisp natural hairline, highly detailed hair strands, barbershop styling, natural hair sheen, 8k resolution, cinematic studio lighting`;
+      if (!cleanPrompt.toLowerCase().startsWith('a portrait photo') && !cleanPrompt.toLowerCase().startsWith('a photorealistic')) {
+        const baseDescription = stylePrompt.replace(/^Apply photorealistic men's /i, '').replace(/\.$/, '');
+        cleanPrompt = `A photorealistic portrait photograph of this man with ${baseDescription}, crisp clean razor hairline, ultra-detailed human hair strands, authentic barbershop finish, 8k uhd, soft studio lighting`;
       }
 
       // 7. Log: Compilação do Prompt
@@ -146,13 +141,17 @@ export class ReplicateInpaintingVisagismProvider implements VisagismImageProvide
         negativePrompt: negativePrompt || 'none',
       });
 
-      // 8. Payload específico e calibrado para o FLUX.1 Fill Dev
+      const fluxGuidance = process.env.VISAGISM_FLUX_GUIDANCE
+        ? parseFloat(process.env.VISAGISM_FLUX_GUIDANCE)
+        : 30.0;
+
+      // 8. Payload específico e calibrado para o FLUX.1 Fill Dev (guidance 30 para forte adesão ao prompt dentro da máscara)
       const payloadInput = {
         image: base64Image,
         mask: base64Mask,
         prompt: cleanPrompt,
-        guidance: 3.5,
-        num_inference_steps: 28,
+        guidance: fluxGuidance,
+        num_inference_steps: 30,
         output_format: 'jpg',
         output_quality: 95,
       };

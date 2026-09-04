@@ -25,9 +25,9 @@ test('Visagism Pipeline & Root Cause Elimination', async (t) => {
     assert.ok(hairlineY > height * 0.20, 'Hairline must leave full crown volume at top');
   });
 
-  await t.test('2. Replicate Provider config must have guidance 3.5 and correct model', async () => {
+  await t.test('2. Replicate Provider config must have guidance 30.0 and correct model', async () => {
     const replicateFile = fs.readFileSync(path.join(__dirname, '../src/lib/visagism/providers/replicate.ts'), 'utf8');
-    assert.ok(replicateFile.includes('guidance: 3.5'), 'FLUX guidance must be 3.5 (not 28.0)');
+    assert.ok(replicateFile.includes('30.0'), 'FLUX guidance must be 30.0 for Fill Inpainting');
     assert.ok(replicateFile.includes('black-forest-labs/flux-fill-dev'), 'Must use FLUX.1 Fill Dev');
   });
 
