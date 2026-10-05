@@ -13,6 +13,7 @@
     "prisma:seed": "node prisma/seed.js",
     "backup": "node scripts/backup.js",
     "backup:test": "node scripts/test-restore.js",
+    "worker:reminders": "node scripts/internal-scheduler.js",
     "test": "node --test --test-concurrency=1 tests/**/*.test.js"
   },
   "dependencies": {

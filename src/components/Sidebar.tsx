@@ -45,7 +45,7 @@ export function Sidebar({ barbershopName, slug }: { barbershopName?: string; slu
       icon: GraduationCap,
       badge: 'Novo',
     },
-    { href: '/automacoes', label: 'Automações & n8n', icon: Zap },
+    { href: '/automacoes', label: 'Automações & WhatsApp', icon: Zap },
     { href: '/configuracoes', label: 'Configurações', icon: Settings },
   ];
 

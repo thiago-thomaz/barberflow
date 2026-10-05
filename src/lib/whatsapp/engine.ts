@@ -1398,7 +1398,7 @@ export async function processWhatsAppMessage(incoming: WhatsAppIncomingMessage):
           scheduledAt: bookingResult.appointment.scheduledAt,
         });
 
-        // Trigger Event for Webhooks & n8n
+        // Trigger Event for Webhooks & Internal Bus
         await publishEvent(
           'APPOINTMENT_CREATED',
           shop.id,

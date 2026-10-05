@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
       tenant_id: session.barbershopId,
       data: {
-        message: 'Teste de conexão do BarberFlow com n8n realizado com sucesso!',
+        message: 'Teste de conexão do BarberFlow com webhook externo realizado com sucesso!',
         source: 'BarberFlow SaaS Automation Engine',
       },
     };

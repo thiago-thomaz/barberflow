@@ -113,7 +113,7 @@ export default function AutomacoesPage() {
   const openNewModal = () => {
     setEditingWebhook(null);
     setForm({
-      url: 'https://n8n.srv1194775.hstgr.cloud/webhook/barberflow-events',
+      url: '',
       secret: `whsec_${Math.random().toString(36).substring(2, 15)}`,
       isActive: true,
     });
@@ -253,7 +253,7 @@ export default function AutomacoesPage() {
   return (
     <AppShell
       title="Automações & WhatsApp Engine"
-      subtitle="Atendimento conversacional, lembretes anti-duplicação e integração n8n"
+      subtitle="Atendimento conversacional, lembretes automáticos e motor nativo de eventos"
       actions={
         activeTab === 'webhooks' ? (
           <button
@@ -261,7 +261,7 @@ export default function AutomacoesPage() {
             className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-2 text-xs font-bold text-black shadow-lg shadow-amber-500/20 hover:from-amber-400 hover:to-amber-500 transition-all"
           >
             <Plus className="h-4 w-4" />
-            <span>Configurar Webhook n8n</span>
+            <span>Configurar Webhook</span>
           </button>
         ) : (
           <button
@@ -298,7 +298,7 @@ export default function AutomacoesPage() {
             }`}
           >
             <Zap className="h-4 w-4" />
-            <span>Webhooks n8n & Eventos</span>
+            <span>Webhooks & Eventos</span>
           </button>
         </div>
 
@@ -409,18 +409,18 @@ export default function AutomacoesPage() {
                   </div>
 
                   <div className="p-3 rounded-lg bg-[#0D0F12] border border-[#22262E] space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-zinc-500">Webhook n8n</span>
-                    <span className="font-mono font-bold text-amber-400 block">/barberflow-waha-inbound</span>
+                    <span className="text-[10px] uppercase font-bold text-zinc-500">Webhook Direto</span>
+                    <span className="font-mono font-bold text-amber-400 block">/api/webhooks/whatsapp</span>
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400 space-y-1.5">
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-zinc-300">Webhook Configurado no WAHA:</span>
-                    <span className="text-[10px] text-emerald-400 font-mono">HMAC + Replay Protection</span>
+                    <span className="font-bold text-zinc-300">Webhook Nativo Configurado no WAHA:</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">100% Interno</span>
                   </div>
                   <code className="text-amber-400 break-all font-mono block bg-black/40 p-2 rounded border border-zinc-800">
-                    https://n8n.srv1194775.hstgr.cloud/webhook/barberflow-waha-inbound
+                    https://barber.projetosunion.cloud/api/webhooks/whatsapp
                   </code>
                 </div>
               </div>
@@ -493,17 +493,17 @@ export default function AutomacoesPage() {
           </div>
         )}
 
-        {/* ================= TAB 2: WEBHOOKS N8N ================= */}
+        {/* ================= TAB 2: WEBHOOKS & EVENTOS ================= */}
         {activeTab === 'webhooks' && (
           <div className="space-y-6">
             {/* Banner Info */}
             <div className="rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-[#1A1D23] to-[#121418] p-5 shadow-xl space-y-2">
               <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
                 <Zap className="h-4 w-4" />
-                <span>Central de Notificações & Automações n8n</span>
+                <span>Central de Eventos & Webhooks</span>
               </div>
               <p className="text-xs text-zinc-300 max-w-2xl leading-relaxed">
-                O BarberFlow envia eventos em tempo real com assinatura criptográfica <strong>HMAC-SHA256</strong> diretamente para seu webhook do n8n.
+                O BarberFlow envia eventos em tempo real com assinatura criptográfica <strong>HMAC-SHA256</strong> diretamente para seus endpoints e servidores.
               </p>
             </div>
 
@@ -551,7 +551,7 @@ export default function AutomacoesPage() {
                 <div className="py-8 text-center text-xs text-zinc-500">Carregando automações...</div>
               ) : webhooks.length === 0 ? (
                 <div className="py-8 text-center text-xs text-zinc-500">
-                  Nenhum webhook cadastrado. Clique em &quot;Configurar Webhook n8n&quot; acima para conectar seu fluxo.
+                  Nenhum webhook cadastrado. Clique em &quot;Configurar Webhook&quot; acima para cadastrar seu endpoint.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -607,7 +607,7 @@ export default function AutomacoesPage() {
             {/* Available Events Catalog */}
             <div className="rounded-xl border border-[#22262E] bg-[#14171C] p-5 shadow-xl space-y-4">
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300">
-                Catálogo de Eventos Suportados no n8n
+                Catálogo de Eventos Suportados
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
@@ -627,7 +627,7 @@ export default function AutomacoesPage() {
           <Modal
             isOpen={isModalOpen}
             onClose={() => setIsModalOpen(false)}
-            title={editingWebhook ? 'Editar Webhook n8n' : 'Configurar Novo Webhook n8n'}
+            title={editingWebhook ? 'Editar Webhook' : 'Configurar Novo Webhook'}
           >
             <form onSubmit={handleSaveWebhook} className="space-y-4 text-xs">
               {error && (
@@ -637,11 +637,11 @@ export default function AutomacoesPage() {
               )}
 
               <div>
-                <label className="block text-zinc-400 mb-1">URL do Webhook (n8n ou Gateway):</label>
+                <label className="block text-zinc-400 mb-1">URL do Webhook (HTTP / HTTPS):</label>
                 <input
                   type="url"
                   required
-                  placeholder="https://n8n.seu-dominio.com/webhook/barberflow-events"
+                  placeholder="https://api.seu-sistema.com/webhooks"
                   value={form.url}
                   onChange={(e) => setForm({ ...form, url: e.target.value })}
                   className="w-full rounded-lg border border-[#22262E] bg-[#0D0F12] px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-mono"

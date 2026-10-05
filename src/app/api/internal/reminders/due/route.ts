@@ -4,7 +4,7 @@ import { processDueReminders } from '@/lib/whatsapp/reminders';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/internal/reminders/due - List pending due reminders for n8n cron or background monitor
+// GET /api/internal/reminders/due - List pending due reminders for internal scheduler or monitor
 export async function GET(req: NextRequest) {
   try {
     const now = new Date();

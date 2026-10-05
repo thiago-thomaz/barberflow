@@ -33,7 +33,7 @@ export function signWebhookPayload(payloadString: string, secret: string): strin
 }
 
 /**
- * Publishes an event to the internal queue and triggers registered webhooks (e.g. for n8n)
+ * Publishes an event to the internal queue and triggers registered webhooks
  */
 export async function publishEvent(
   eventType: EventType,

@@ -43,7 +43,7 @@ export default function LandingPage() {
               Motor de Recorrência
             </a>
             <a href="#automacao" className="hover:text-amber-400 transition-colors">
-              Automação n8n
+              Automações Nativas
             </a>
             <a href="#planos" className="hover:text-amber-400 transition-colors">
               Planos
@@ -87,7 +87,7 @@ export default function LandingPage() {
 
           <p className="text-sm sm:text-base text-zinc-400 max-w-2xl mx-auto leading-relaxed">
             O BarberFlow calcula o intervalo de corte de cada cliente, avisa quem está sumindo,
-            mostra o <strong>Dinheiro Deixado na Mesa</strong> e automatiza lembretes no WhatsApp via n8n.
+            mostra o <strong>Dinheiro Deixado na Mesa</strong> e automatiza lembretes no WhatsApp de forma nativa.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
@@ -123,7 +123,7 @@ export default function LandingPage() {
             </div>
             <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
               <span className="text-2xl font-extrabold text-blue-400 block">100%</span>
-              <span className="text-xs text-zinc-400">Integrado com n8n & WhatsApp</span>
+              <span className="text-xs text-zinc-400">Automações & WhatsApp Nativo</span>
             </div>
           </div>
         </div>
@@ -228,9 +228,9 @@ export default function LandingPage() {
             <div className="h-10 w-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center font-bold">
               <Zap className="h-5 w-5" />
             </div>
-            <h3 className="font-bold text-white text-base">Automações com n8n</h3>
+            <h3 className="font-bold text-white text-base">Automações Nativas & Inteligentes</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Webhooks com assinatura HMAC-SHA256 para disparar confirmações, lembretes de horário, solicitações de Google Reviews e campanhas de aniversário.
+              Motor interno de agendamento e webhooks para disparar confirmações, lembretes de horário, solicitações de Google Reviews e campanhas de retorno.
             </p>
           </div>
 
@@ -316,7 +316,7 @@ export default function LandingPage() {
                 <ul className="space-y-2 text-xs text-zinc-300 pt-3 border-t border-amber-500/30">
                   <li>✓ Barbeiros Ilimitados</li>
                   <li>✓ <strong>Dinheiro na Mesa Completo</strong></li>
-                  <li>✓ <strong>Integração com n8n & Webhooks</strong></li>
+                  <li>✓ <strong>Automações Nativas & Webhooks</strong></li>
                   <li>✓ QR Code do Balcão</li>
                   <li>✓ Relatórios Financeiros & Comissões</li>
                 </ul>

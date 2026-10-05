@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: 'Verificação falhou' }, { status: 403 });
 }
 
-// POST /api/webhooks/whatsapp - Receive inbound WhatsApp messages (Meta Cloud, n8n, or simulator)
+// POST /api/webhooks/whatsapp - Receive inbound WhatsApp messages (WAHA Native, Meta Cloud, or direct simulator)
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   try {
@@ -91,31 +91,49 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, result });
     }
 
-    // 2. Direct format (n8n, WAHA, Simulator, or Custom Gateway)
-    const {
-      from,
-      text,
-      tenantSlug,
-      barbershopId,
-      receiverPhone,
-      messageId,
-      senderName,
-      mediaUrl,
-      mediaBase64,
-      image,
-      media,
-      mimeType,
-      mediaMimeType,
-      mediaType,
-    } = body;
+    // 2. Direct format (WAHA Native Webhook, Direct API, Simulator, or Custom Gateway)
+    let messageFrom = body.from;
+    let messageText = body.text;
+    let resolvedTenantSlug = body.tenantSlug || body.barbershopId;
+    let resolvedReceiverPhone = body.receiverPhone;
+    let resolvedMessageId = body.messageId;
+    let resolvedSenderName = body.senderName;
+    let rawMediaUrl = body.mediaUrl;
+    let rawMediaBase64 = body.mediaBase64;
+    let rawMimeType = body.mediaMimeType || body.mimeType;
+    let rawMediaType = body.mediaType;
 
-    const resolvedMediaBase64 = mediaBase64 || (typeof image === 'string' && image.startsWith('data:') ? image : undefined);
-    const resolvedMediaUrl = mediaUrl || (typeof image === 'string' && image.startsWith('http') ? image : undefined) || (typeof media === 'string' && media.startsWith('http') ? media : undefined);
-    const resolvedMimeType = mediaMimeType || mimeType || (resolvedMediaBase64?.startsWith('data:') ? resolvedMediaBase64.split(';')[0].replace('data:', '') : undefined);
+    // Handle Native WAHA Webhook Event format (direct from WAHA container)
+    if (body.event && body.payload) {
+      const payload = body.payload;
 
-    const messageText = text || body.caption || (resolvedMediaBase64 || resolvedMediaUrl ? '[FOTO]' : '');
+      // Ignore outbound messages sent by the bot/barbershop itself
+      if (payload.fromMe) {
+        return NextResponse.json({ status: 'ignored_outgoing_message' });
+      }
 
-    if (!from || !messageText) {
+      messageFrom = payload.from || payload.author || payload.participant || messageFrom;
+      messageText = payload.body || payload.caption || payload.text || messageText;
+      resolvedMessageId = payload.id || resolvedMessageId;
+      resolvedSenderName = payload._data?.notifyName || payload.notifyName || resolvedSenderName;
+
+      if (body.session && !resolvedTenantSlug) {
+        resolvedTenantSlug = body.session;
+      }
+
+      if (payload.hasMedia && payload.media) {
+        rawMediaUrl = payload.media.url || rawMediaUrl;
+        rawMimeType = payload.media.mimetype || payload.media.mimeType || rawMimeType;
+      }
+    }
+
+    const resolvedMediaBase64 = rawMediaBase64 || (typeof body.image === 'string' && body.image.startsWith('data:') ? body.image : undefined);
+    const resolvedMediaUrl = rawMediaUrl || (typeof body.image === 'string' && body.image.startsWith('http') ? body.image : undefined) || (typeof body.media === 'string' && body.media.startsWith('http') ? body.media : undefined);
+    const resolvedMimeType = rawMimeType || (resolvedMediaBase64?.startsWith('data:') ? resolvedMediaBase64.split(';')[0].replace('data:', '') : undefined);
+
+    const finalMessageText = messageText || body.caption || (resolvedMediaBase64 || resolvedMediaUrl ? '[FOTO]' : '');
+
+    if (!messageFrom || !finalMessageText) {
       return NextResponse.json(
         { error: 'Campos obrigatórios: from e text (ou imagem)' },
         { status: 400 }
@@ -123,30 +141,30 @@ export async function POST(req: NextRequest) {
     }
 
     logger.whatsapp('DIRECT_MESSAGE_RECEIVED', {
-      from,
-      phone: from,
-      text: messageText,
-      barbershopId,
+      from: messageFrom,
+      phone: messageFrom,
+      text: finalMessageText,
+      barbershopId: resolvedTenantSlug,
       actionTaken: 'processWhatsAppMessage',
     });
 
     const result = await processWhatsAppMessage({
-      from,
-      text: messageText,
-      tenantSlugOrId: tenantSlug || barbershopId,
-      receiverPhone: receiverPhone,
-      messageId,
-      senderName,
+      from: messageFrom,
+      text: finalMessageText,
+      tenantSlugOrId: resolvedTenantSlug,
+      receiverPhone: resolvedReceiverPhone,
+      messageId: resolvedMessageId,
+      senderName: resolvedSenderName,
       mediaUrl: resolvedMediaUrl,
       mediaBase64: resolvedMediaBase64,
       mediaMimeType: resolvedMimeType,
-      mediaType: mediaType || (resolvedMediaBase64 || resolvedMediaUrl ? 'image' : 'text'),
+      mediaType: rawMediaType || (resolvedMediaBase64 || resolvedMediaUrl ? 'image' : 'text'),
     });
 
     const durationMs = Date.now() - startTime;
     logger.http('POST', '/api/webhooks/whatsapp', 200, durationMs, {
-      source: 'Direct/WAHA',
-      from,
+      source: body.event ? 'WAHA_Native' : 'Direct_Inbound',
+      from: messageFrom,
       actionTaken: (result as any)?.action || (result as any)?.status || 'processed',
     });
 

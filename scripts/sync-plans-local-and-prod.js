@@ -35,7 +35,7 @@ const OFFICIAL_PLANS = [
     featuresJson: JSON.stringify([
       'Barbeiros Ilimitados',
       'Dinheiro na Mesa Completo',
-      'Integração com n8n & Webhooks',
+      'Automações Nativas & Webhooks',
       'QR Code do Balcão',
       'Relatórios Financeiros & Comissões',
       'Automação WhatsApp & Lembretes',

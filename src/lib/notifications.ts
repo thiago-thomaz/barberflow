@@ -1,5 +1,7 @@
 import { prisma } from './prisma';
 import { publishEvent } from './events';
+import { getWhatsAppProvider } from './whatsapp/provider';
+import { logger } from './logger';
 
 export interface DispatchNotificationParams {
   barbershopId: string;
@@ -19,7 +21,8 @@ export interface DispatchNotificationParams {
 }
 
 /**
- * Dispatches a notification and logs its execution in the Notification history table
+ * Dispatches a notification and logs its execution in the Notification history table.
+ * 100% Native: Dispatches directly via internal WhatsApp engine with zero external n8n dependency.
  */
 export async function sendNotification(params: DispatchNotificationParams) {
   const {
@@ -29,7 +32,7 @@ export async function sendNotification(params: DispatchNotificationParams) {
     type,
     recipient,
     message,
-    provider = 'N8N_WEBHOOK',
+    provider = 'INTERNAL_WHATSAPP',
     metadata,
   } = params;
 
@@ -38,7 +41,31 @@ export async function sendNotification(params: DispatchNotificationParams) {
   let externalId: string | null = null;
 
   try {
-    // If WhatsApp or n8n webhook provider, publish event to webhook bus
+    if (channel === 'WHATSAPP') {
+      const whatsappProvider = getWhatsAppProvider();
+      const sendRes = await whatsappProvider.sendText({
+        to: recipient,
+        text: message,
+        tenantId: barbershopId,
+        customerId,
+        type: 'TEXT',
+      });
+
+      if (sendRes.success) {
+        status = 'SENT';
+        externalId = sendRes.messageId || null;
+      } else {
+        status = 'FAILED';
+        errorMsg = sendRes.error || 'Falha ao despachar via WhatsApp nativo';
+        logger.warn('[NOTIFICATION] Falha ao enviar WhatsApp direto:', {
+          module: 'NOTIFICATION',
+          tenantId: barbershopId,
+          metadata: { recipient, error: errorMsg },
+        });
+      }
+    }
+
+    // Publish event internally to database & webhooks
     await publishEvent(
       type as any,
       barbershopId,
@@ -49,9 +76,9 @@ export async function sendNotification(params: DispatchNotificationParams) {
         ...metadata,
       },
       { customerId }
-    );
-
-    status = 'SENT';
+    ).catch((err) => {
+      logger.warn('[NOTIFICATION] Erro ao gravar evento interno:', err);
+    });
   } catch (err: any) {
     status = 'FAILED';
     errorMsg = err.message || 'Falha ao despachar notificação';

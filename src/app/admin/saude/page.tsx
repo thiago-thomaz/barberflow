@@ -177,8 +177,8 @@ export default function AdminSaudePage() {
                 <Zap className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white">Barramento de Automações (n8n)</h3>
-                <p className="text-[11px] text-slate-400">Webhooks HMAC-SHA256</p>
+                <h3 className="text-sm font-bold text-white">Motor de Automações Interno</h3>
+                <p className="text-[11px] text-slate-400">Scheduler & WhatsApp Nativo</p>
               </div>
             </div>
             {getStatusBadge(health?.services?.automations?.status || 'UNKNOWN')}

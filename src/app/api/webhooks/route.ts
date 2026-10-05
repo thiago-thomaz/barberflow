@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/webhooks - Register new webhook (e.g. n8n webhook URL)
+// POST /api/webhooks - Register new webhook (generic HTTP endpoint)
 export async function POST(req: NextRequest) {
   try {
     const session = getSessionFromRequest(req);

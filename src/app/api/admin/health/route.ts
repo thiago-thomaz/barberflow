@@ -85,8 +85,10 @@ export async function GET(req: NextRequest) {
           latencyMs: wahaLatencyMs,
         },
         automations: {
-          engine: 'n8n Webhook HMAC-SHA256 Bus',
+          engine: 'Motor Nativo de Automações & Scheduler Interno',
           status: 'ACTIVE',
+          scheduler: 'RUNNING',
+          delivery: 'DIRECT_WHATSAPP_NATIVE',
         },
       },
     });

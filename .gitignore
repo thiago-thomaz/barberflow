@@ -25,6 +25,9 @@ yarn-error.log*
 # local env files
 .env
 .env*.local
+.env.*
+*.env
+!.env.example
 
 # vercel
 .vercel
@@ -40,3 +43,5 @@ dev.db-journal
 /backups/*.sql.gz
 storage/
 uploads/
+test_face_protected_mask.png
+*.local.png

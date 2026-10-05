@@ -4,7 +4,7 @@ import { getTodayDateStringSP } from '@/lib/timezone';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/public/whatsapp/availability - Availability for n8n or conversational bot
+// GET /api/public/whatsapp/availability - Availability for conversational bot or integrations
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);

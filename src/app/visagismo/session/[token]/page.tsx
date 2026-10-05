@@ -94,10 +94,23 @@ export default function VisagismoSessionPage() {
 
     setGeneratingPreview(true);
     try {
-      // Se a foto já foi confirmada e salva no servidor, não re-envia base64 pesado para evitar lentidão
       let base64Payload: string | undefined = undefined;
-      if (photoPreview.startsWith('data:') && !isPhotoConfirmed) {
+      if (photoPreview.startsWith('data:')) {
         base64Payload = photoPreview;
+      } else {
+        try {
+          const photoBlobRes = await fetch(photoPreview);
+          if (photoBlobRes.ok) {
+            const blob = await photoBlobRes.blob();
+            base64Payload = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          }
+        } catch (e) {
+          // fallback
+        }
       }
 
       const res = await fetch(`/api/visagismo/session/${token}/generate-preview`, {
@@ -115,20 +128,14 @@ export default function VisagismoSessionPage() {
         }),
       });
 
-      let data: any = {};
-      try {
-        data = await res.json();
-      } catch (jsonErr) {
-        data = {};
-      }
-
+      const data = await res.json();
       if (res.ok && data.success && data.previewUrl) {
         setAiPreviews((prev) => ({ ...prev, [recIndex]: data.previewUrl }));
         if (typeof data.remainingGenerations === 'number') {
           setRemainingGenerations(data.remainingGenerations);
         }
       } else {
-        alert(data.message || data.error || 'Não foi possível processar a simulação no momento. Tente novamente.');
+        alert(data.message || data.error || 'Não foi possível gerar a simulação no momento.');
       }
     } catch (err: any) {
       console.warn('Erro ao gerar inpainting facial:', err);
@@ -184,9 +191,9 @@ export default function VisagismoSessionPage() {
   // Função auxiliar para comprimir e normalizar a foto no celular antes do upload
   const compressAndNormalizeImage = async (
     file: File,
-    maxWidth = 960,
-    maxHeight = 960,
-    quality = 0.80
+    maxWidth = 1024,
+    maxHeight = 1024,
+    quality = 0.85
   ): Promise<{ blob: Blob; dataUrl: string }> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -678,11 +685,10 @@ export default function VisagismoSessionPage() {
                       key={obj}
                       type="button"
                       onClick={() => setObjective(obj)}
-                      className={`p-4 rounded-2xl border text-left transition-all ${
-                        objective === obj
+                      className={`p-4 rounded-2xl border text-left transition-all ${objective === obj
                           ? 'bg-amber-500 text-black border-amber-400 font-bold shadow-lg shadow-amber-500/20'
                           : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
-                      }`}
+                        }`}
                     >
                       <p className="text-xs">{obj}</p>
                     </button>
@@ -711,11 +717,10 @@ export default function VisagismoSessionPage() {
                       key={st}
                       type="button"
                       onClick={() => setStyle(st)}
-                      className={`p-4 rounded-2xl border text-left transition-all ${
-                        style === st
+                      className={`p-4 rounded-2xl border text-left transition-all ${style === st
                           ? 'bg-amber-500 text-black border-amber-400 font-bold shadow-lg shadow-amber-500/20'
                           : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
-                      }`}
+                        }`}
                     >
                       <p className="text-xs">{st}</p>
                     </button>
@@ -757,11 +762,10 @@ export default function VisagismoSessionPage() {
                           key={lvl}
                           type="button"
                           onClick={() => setChangeLevel(lvl)}
-                          className={`py-2.5 px-2 rounded-xl border text-center text-xs font-semibold ${
-                            changeLevel === lvl
+                          className={`py-2.5 px-2 rounded-xl border text-center text-xs font-semibold ${changeLevel === lvl
                               ? 'bg-amber-500 text-black border-amber-400 font-bold'
                               : 'bg-zinc-900 border-zinc-800 text-zinc-400'
-                          }`}
+                            }`}
                         >
                           {lvl}
                         </button>
@@ -781,11 +785,10 @@ export default function VisagismoSessionPage() {
                           key={m.id}
                           type="button"
                           onClick={() => setMaintenanceLevel(m.id)}
-                          className={`py-2.5 px-2 rounded-xl border text-center text-xs font-semibold ${
-                            maintenanceLevel === m.id
+                          className={`py-2.5 px-2 rounded-xl border text-center text-xs font-semibold ${maintenanceLevel === m.id
                               ? 'bg-amber-500 text-black border-amber-400 font-bold'
                               : 'bg-zinc-900 border-zinc-800 text-zinc-400'
-                          }`}
+                            }`}
                         >
                           {m.label}
                         </button>
@@ -827,11 +830,10 @@ export default function VisagismoSessionPage() {
                   key={idx}
                   type="button"
                   onClick={() => setSelectedRecIndex(idx)}
-                  className={`p-2.5 rounded-2xl border text-left transition-all ${
-                    selectedRecIndex === idx
+                  className={`p-2.5 rounded-2xl border text-left transition-all ${selectedRecIndex === idx
                       ? 'bg-amber-500 text-black border-amber-400 font-bold shadow-lg shadow-amber-500/20'
                       : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                  }`}
+                    }`}
                 >
                   <p className="text-[10px] uppercase font-bold tracking-wider">
                     {idx === 0 ? '🥇 Principal' : idx === 1 ? '🥈 Opção 2' : '🥉 Opção 3'}
