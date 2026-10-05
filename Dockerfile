@@ -26,7 +26,7 @@ RUN npm run build
 # 3. Production runner stage
 FROM node:20-alpine AS runner
 WORKDIR /app
-RUN apk add --no-cache libc6-compat openssl
+RUN apk add --no-cache libc6-compat openssl curl wget
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
 
@@ -49,7 +49,7 @@ EXPOSE 3000
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:3000/api/health || exit 1
+HEALTHCHECK --interval=20s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -fsS http://localhost:3000/api/health || exit 1
 
 CMD ["node", "server.js"]
